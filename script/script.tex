@@ -21,9 +21,206 @@
 \begin{document}
 \maketitle
 
-\section{Problem Statement}
 
-Here will be a problem statement.
+% MARK: Intro
+\section{Introduction}
+
+The humble blur is one of the most expensive techniques in computer graphics.
+
+It can be more costly than ray tracing an entire scene when unoptimised.
+
+Yet, we see blurs used everywhere, even in realtime applications like video games.
+
+Today I will explain why blurring an image can be so expensive, and how modern GPUs do it in a fraction of a millisecond.
+
+
+% MARK: Box
+\section{Box Blur}
+
+First, we'll represent our image as a two-dimensional matrix of floats between 0 and 1.
+
+In RGB, there are three such arrays, but our blur can be applied independently to each, so let's consider just the one channel.
+
+You can blur an image by looping through each pixel and setting it to the average of the pixel values in some square grid around it.
+
+On the edges, you ignore grid positions that don't have associated pixels; they aren't included in the sum, nor do they contribute to the count.
+
+Each pixel writes its value to a write buffer, a second array that holds our intermediary values, to avoid race conditions.
+
+Let's try applying a 41 by 41 box blur to this image.
+
+% At this point, stall the video momentum for a moment and show a loading spinner
+% Then, a TADA sfx when it's done
+
+Wow! That took a long time. I may have exaggerated it slightly, but the roughly N milliseconds that this actually took to process is equivalent to 30 percent of the per-frame time budget game developers have when they aim for that smooth sixty frames.
+
+$$
+    \frac{1}{60} = 0.016\bar{7} \text{s} = 16.\bar{7} \text{ms}
+$$
+$$
+    \frac{100 \cdot N}{16.\bar{7}} = 30\%
+$$
+
+Let's do some maths. Our kernel is not very big, but even at this size, we're already processing almost seventeen hundred ($41\cdot41=1681$) pixels, per pixel, each time fetching all those values from memory, summing and dividing them, then writing the new pixel value to the write buffer.
+
+In GPU land, the summing and dividing are almost free. There's also only one write per pixel. What slows us down is the number of \textbf{memory reads}.
+
+In GPU programming, when you look up the value of a texture at a particular position, we call that a ``tap.'' % themoreyouknow
+
+Our current implementation does almost 4 billion taps ($41\cdot41\cdot1920\cdot1080=3,485,721,600$). In 4K, that would be 14 billion ($41\cdot41\cdot3840\cdot2160=13,942,886,400$), which explains why our blur is so slow.
+
+You'll also notice these boxy artifacts, which don't resemble what we would expect a camera's blur to look like. In fact, the box blur is a very naive approach to blurring, and in order to understand modern graphics, we'll need to learn the Gaussian blur.
+
+
+% MARK: Gaussian
+\section{Gaussian Blur}
+
+Consider a representative box blur kernel. Instead of assuming each pixel's weight to be 1, unless it's out of bounds, and dividing by the total count, let's take the pixel's x and y position in kernel space and pass those to a weight function.
+
+We can then weight each pixel by the output of that function, and sum the weights together to take the average at the end.
+
+Thanks to this abstraction, we can define our weight function however we like.
+
+In order to get a gaussian blur, we'll use a standard gaussian function, also called the normal distribution.
+
+$$
+    w(x, y) = \frac{1}{2 \pi \sigma^2} e^{\frac{- x^2 - y^2}{2 \sigma^2}}
+$$
+
+We've now introduced a second parameter, the standard deviation ``sigma,'' which we can modulate as well as the kernel size.
+
+If I crank up the standard deviation, the image will get more blurred, until suddenly these boxes reappear.
+
+This is because our weight function is in kernel space, so it does not vary as the size of our kernel changes. The kernel is like a window over the weight function; here, our kernel is clearly too small for the function we want to apply.
+
+To fix this, let's set our kernel size to always be at least $6\sigma$~\cite{web:dspse-gaussian-kernel}.
+
+Now we can compare the Gaussian with our box blur. To get roughly the same kernel size, we'll use a standard deviation of seven. The gaussian looks less intensely blurred, but there's also no artifacts. Yay!
+
+The gaussian blur is the standard blur in computer graphics. But, at the same kernel size, it is just as slow as the box blur.
+
+So how do we optimise this?
+
+% MARK: Separation
+\section{Linear Separation}
+
+Currently, our blur is the result of a two-dimensional weight function.
+
+$$
+    \text{blur}(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ \text{image}[x+i, y+j] \cdot w(i, j) \Bigr]\\
+$$
+$$
+    w(x, y) = \frac{1}{2 \pi \sigma^2} e^{\frac{- x^2 - y^2}{2 \sigma^2}}
+$$`'
+
+For example, let's say our weight function produces something like this kernel. % Show an example 3x3 gaussian kernel
+
+$$
+    W =
+    \begin{bmatrix}
+        1 & 2 & 1 \\
+        2 & 4 & 2 \\
+        1 & 2 & 1 \\
+    \end{bmatrix}
+$$
+
+% Show an example 5x5 image matrix
+Applying it to this image is a discrete convolution of the image matrix by the kernel matrix.
+
+$$
+    I * W
+$$
+
+% Show the kernel convolving across the rows of the image matrix
+
+This convolution is our blur function, represented here by two sums, which we would implement as a 2D nested loop.
+
+$$
+    (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{i=-n} \Bigl[ \text{image}[x+i, y+j] \cdot w(i, j)\Bigr]
+$$
+
+The astute viewer will notice that this formulation is of polynomial complexity in $O(n^2)$ per pixel, because we're iterating across all $(2n+1)^2$ pixels in the kernel.
+
+The question we should be asking is: does this \textit{have} to be in polynomial time? Or, equivalently: does our weight function have to be two-dimensional?
+
+Look again at this example kernel. Doesn't it look sort of symmetric?
+
+A property of the gaussian weight function is that the kernels it produces are \textbf{linearly separable}.
+
+$$
+    e^{- x^2 - y^2} = e^{-x^2} \cdot e^{-y^2}
+$$
+
+What this means is that our example matrix can actually be produced by taking the outer product of two vectors.
+
+Unlike the dot product, which collapses vectors into a scalar, the outer product of two vectors of length $k$ expands them into a new $k$-by-$k$ matrix containing every combination of their components' products.
+
+$$
+    \langle1, 2, 1\rangle \otimes \langle1, 2, 1\rangle
+    =
+    \begin{bmatrix}
+        1\cdot1 & 1\cdot2 & 1\cdot1 \\
+        2\cdot1 & 2\cdot2 & 2\cdot1 \\
+        1\cdot1 & 1\cdot2 & 1\cdot1 \\
+    \end{bmatrix}
+    =
+    \begin{bmatrix}
+        1 & 2 & 1 \\
+        2 & 4 & 2 \\
+        1 & 2 & 1 \\
+    \end{bmatrix}
+$$
+
+This is also the case for our box blur, which is trivially the outer product of all-one vectors.
+
+With this in mind, instead of having our weight function's $x$ and $y$ coordinates map into a single 2D matrix, we can get the weight by computing the product of two elements from two 1 dimensional matrices.
+
+$$
+    w(x, y) = W[x, y] = a[x] \cdot b[y]
+$$
+
+Substituting this into our blur equation, we have successfully linearly separated the $i$ and $j$ iterators, which can now be pulled out of their respective loops.
+
+$$
+    (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{i=-n} \Bigl[ \text{image}[x+i, y+j] \cdot a[i] \cdot b[j]\Bigr]
+$$
+We can take the $i$ variable out of the outer sum
+$$
+    (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot \sum^{n}_{i=-n} \Bigl[ \text{image}[x+i, y+j] \cdot b[j]\Bigr]
+$$
+To see that what we have in the inner sum is equivalent to a 1D convolution on the y axis
+$$
+    (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot (\text{image}_y * b_y)
+$$
+Making our outer sum reduce to another 1D convolution on the x axis, applied to that initial convolution.
+$$
+    (I * W)(x, y) = (\text{image}_x * a) \text{image}_y * b_y)
+$$
+
+What we've proven here is that our 2D convolution is mathematically equivalent to 2 chained 1D convolutions.
+
+The maths is, of course, the same, which is the point. But the computation is now completely different.
+
+Because, where we previously had three point five billion taps to execute ($41\cdot41\cdot1920\cdot1080=3,485,721,600$), we now have only one-hundred-and-seventy \textit{million} ($2\cdot41\cdot1920\cdot1080=170,035,200$).
+
+This is a \textit{95 percent} reduction in the number of memory reads our algorithm requires ($1-(170035200/3485721600)\cdot100=95.12$).
+
+What's even better is that this improvement in time complexity does \textbf{not} come at the cost of space complexity.
+
+Using a ``ping-pong'' buffer technique, we have two buffers; the first is our read buffer, and we do our horizontal convolution onto the second buffer. Then, we read from the second buffer and write the vertical convolution back onto the first buffer, and update the display.
+
+This gives us the exact same result with no additional memory cost, making this optimisation a true win-win.
+
+And, most of all, the method is mathematically the same. It does not approximate a Gaussian: it produces exactly the same result.
+
+This is great. I'm a huge fan. But our blur still takes N2 milliseconds, which, as far as modern graphics are concerned, is glacially slow.
+
+
+% MARK: Kawase
+\section{Masaki Kawase}
+
+
+
 
 \clearpage
 \phantomsection
