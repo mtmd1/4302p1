@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manim Field Guide</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1f; --muted: #6b6b70; --rule: #e3e1db;
+    --code-bg: #f1efe9; --accent: #3b5bdb; --note: #fff4d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15161a; --fg: #e6e6e8; --muted: #9a9aa2; --rule: #2c2d33;
+            --code-bg: #1e1f25; --accent: #8ea6ff; --note: #2e2914; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 96px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.25rem; margin: 48px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  h3 { font-size: 1rem; margin: 24px 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  code, pre { font: 13.5px/1.5 ui-monospace, "JetBrains Mono", Menlo, monospace; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  .c { color: var(--muted); }
+  video { width: 100%; border-radius: 8px; background: #000; display: block; }
+  figure { margin: 20px 0; }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-weight: 600; }
+  .note { background: var(--note); padding: 10px 14px; border-radius: 8px; font-size: 15px; }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 14px; }
+  .flow span { border: 1px solid var(--rule); border-radius: 6px; padding: 4px 8px; }
+  .flow b { color: var(--muted); font-weight: 400; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Manim, for this project</h1>
+<p class="lede">How the community edition of manim (<code>manim</code> 0.22) is structured, where its files come from and go, and how it connects to <code>blur.py</code>. The two demo scenes in this folder are the running examples.</p>
+
+<h2>1. The mental model</h2>
+<p>A manim video is a Python class. You never draw frames yourself. You build objects, then tell manim how they change over time, and it renders every frame through Cairo and pipes the frames into ffmpeg.</p>
+<div class="flow">
+  <span>Scene subclass</span><b>→</b><span><code>construct()</code></span><b>→</b>
+  <span>Mobjects</span><b>→</b><span><code>self.play(Animation)</code></span><b>→</b>
+  <span>frames</span><b>→</b><span>ffmpeg</span><b>→</b><span>.mp4</span>
+</div>
+<table style="margin-top:16px">
+  <tr><th>Concept</th><th>What it is</th></tr>
+  <tr><td><b>Scene</b></td><td>One video clip. Each <code>Scene</code> subclass in a file renders to its own mp4. Use one file per graphic, with one or more scenes in it.</td></tr>
+  <tr><td><b>Mobject</b></td><td>Anything drawable: <code>Text</code>, <code>MathTex</code>, <code>Arrow</code>, <code>Matrix</code>, <code>Axes</code>, <code>ImageMobject</code>. <code>Group</code>/<code>VGroup</code> nest them. Positioning is relative: <code>.next_to()</code>, <code>.arrange()</code>, <code>.to_edge()</code>. The frame is 14.2 × 8 units.</td></tr>
+  <tr><td><b>Animation</b></td><td>A change over time, passed to <code>self.play()</code>: <code>FadeIn</code>, <code>Write</code>, <code>Transform</code>, <code>GrowArrow</code>, or <code>mob.animate.&lt;method&gt;()</code> for any method call. <code>self.add()</code> shows something instantly, and <code>self.wait()</code> holds the frame.</td></tr>
+  <tr><td><b>ValueTracker</b></td><td>An invisible number you can animate. It's the knob, for example σ.</td></tr>
+  <tr><td><b>Updater</b></td><td>A function run on a mobject every frame. <code>always_redraw(fn)</code> rebuilds a mobject each frame. Together with a tracker this gives you live parameters: <em>this is how the blur gets into the video</em>.</td></tr>
+</table>
+
+<h2>2. Demo: the Gaussian sweep</h2>
+<figure>
+  <video src="manim_assets/GaussianSweep.mp4" controls loop muted playsinline></video>
+  <figcaption><code>demo_gaussian_sweep.py</code>: σ rises while the radius stays at 6. Past σ ≈ r/3 the kernel cuts off the Gaussian and the dots turn into squares, as in your script's Gaussian section. The timing is the real GPU time for each frame.</figcaption>
+</figure>
+<p>The whole connection to the GPU is the updater:</p>
+<pre><code>sigma = ValueTracker(0.5)
+
+def render():
+    result = blur.gaussian(source, sigma.get_value(), radius=RADIUS, separable=True)
+    stats["ms"] = result.gpu_ms
+    return blur.to_uint8(result.image)         <span class="c"># ImageMobject wants uint8</span>
+
+image = ImageMobject(render())
+image.add_updater(lambda m: setattr(m, "pixel_array", render()))  <span class="c"># every frame</span>
+
+self.play(sigma.animate.set_value(12.0), run_time=4)  <span class="c"># turn the knob</span></code></pre>
+<p>Manim and <code>blur.py</code> never share a GPU context. <code>blur.py</code> runs on its own headless OpenGL context, and manim's default Cairo renderer works on the CPU. The only thing passed between them is a numpy array, so the two can't interfere with each other.</p>
+
+<h2>3. Demo: Dual Kawase, step by step</h2>
+<figure>
+  <video src="manim_assets/DualKawasePyramid.mp4" controls loop muted playsinline></video>
+  <figcaption><code>demo_dual_kawase.py</code>: <code>blur.dual_kawase(..., steps=True)</code> returns every intermediate image. Each one is drawn at the same size with nearest-neighbour scaling, so the drop in resolution shows.</figcaption>
+</figure>
+<pre><code>result = blur.dual_kawase(source, levels=4, steps=True, repeat=20)
+down, up = result.steps[:4], result.steps[4:]   <span class="c"># 1/2 … 1/16, then back up</span>
+result.taps_per_pixel, result.gpu_ms            <span class="c"># numbers for the script</span></code></pre>
+<p>Use <code>steps=True</code> with any blur. For a separable box or Gaussian blur, <code>steps[0]</code> is the horizontal-only pass, which is useful for the linear separation section.</p>
+
+<h2>4. Running it</h2>
+<pre><code>uv run manim -pql src/examples/demo_gaussian_sweep.py GaussianSweep</code></pre>
+<table>
+  <tr><th>Flag</th><th>Effect</th></tr>
+  <tr><td><code>-ql</code> <code>-qm</code> <code>-qh</code> <code>-qk</code></td><td>480p15 / 720p30 / 1080p60 / 2160p60. Work at <code>-ql</code> and render the final version at <code>-qh</code>.</td></tr>
+  <tr><td><code>-p</code></td><td>Open the result when it's done.</td></tr>
+  <tr><td><code>-s</code></td><td>Skip to the end and save only the last frame as a PNG. Fast for checking layout.</td></tr>
+  <tr><td><code>-a</code></td><td>Render every scene in the file.</td></tr>
+  <tr><td><code>-n 3,5</code></td><td>Render only animations 3 to 5.</td></tr>
+  <tr><td><code>-t</code>, <code>--format gif|webm|mov</code></td><td>Transparent background and other output formats, for compositing in your video editor.</td></tr>
+  <tr><td><code>--disable_caching</code></td><td>See the note below.</td></tr>
+</table>
+
+<h2>5. Input and output</h2>
+<h3>In</h3>
+<ul>
+  <li><b>Code:</b> the scene file. Manim adds the file's folder to <code>sys.path</code>, which is why <code>from sample import test_card</code> works. <code>blur</code> is importable everywhere because uv installs the project.</li>
+  <li><b>Images:</b> <code>ImageMobject("photo.png")</code> or <code>ImageMobject(ndarray)</code>. Raster images get blurry when scaled up, so call <code>.set_resampling_algorithm(RESAMPLING_ALGORITHMS["nearest"])</code> when individual pixels should be visible.</li>
+  <li><b>Vectors:</b> <code>SVGMobject("diagram.svg")</code>, for example to trace a figure from a source.</li>
+  <li><b>Text:</b> <code>Text</code> renders system fonts through Pango. <code>Tex</code>/<code>MathTex</code> run your TeX Live install (<code>latex</code> → <code>dvisvgm</code>), so equations can be pasted straight from <code>script.tex</code>.</li>
+  <li><b>Sound:</b> <code>self.add_sound("tada.wav")</code> lines audio up with the animation, for example the TADA in your box blur section.</li>
+</ul>
+<h3>Out</h3>
+<pre><code>media/
+  videos/&lt;file&gt;/&lt;quality&gt;/&lt;Scene&gt;.mp4        <span class="c"># the result</span>
+  videos/&lt;file&gt;/&lt;quality&gt;/partial_movie_files/  <span class="c"># one clip per play(), cached</span>
+  images/&lt;file&gt;/&lt;Scene&gt;.png                   <span class="c"># from -s</span>
+  Tex/, texts/                                <span class="c"># rendered LaTeX and text cache</span></code></pre>
+<p class="note"><b>Caching trap:</b> manim skips re-rendering any <code>play()</code> whose hash hasn't changed. That hash covers the mobjects and animation arguments, not the code inside <code>blur.py</code> that an updater calls. After you edit <code>blur.py</code>, render with <code>--disable_caching</code>.</p>
+
+<h2>6. What it can do for this talk</h2>
+<table>
+  <tr><th>Section</th><th>Manim tools</th></tr>
+  <tr><td>Box blur</td><td><code>IntegerMatrix</code> with a <code>SurroundingRectangle</code> sliding over it as the kernel. <code>DecimalNumber</code> counters for the tap count.</td></tr>
+  <tr><td>Gaussian</td><td><code>Axes.plot</code> for the bell curve, redrawn with <code>always_redraw</code> from the same σ tracker that drives the image. <code>ThreeDScene</code> + <code>Surface</code> for the 2D Gaussian.</td></tr>
+  <tr><td>Linear separation</td><td><code>TransformMatchingTex</code> morphs each line of the derivation into the next, keeping the terms that match. Show <code>steps[0]</code>, the horizontal-only image, between the two passes.</td></tr>
+  <tr><td>Kawase / Dual Kawase</td><td><code>MovingCameraScene</code> to zoom into individual texels and show a bilinear tap landing on a corner. The pyramid above.</td></tr>
+  <tr><td>Results</td><td><code>BarChart</code> of the <code>gpu_ms</code> numbers on a log scale. <code>Code</code> for GLSL excerpts with syntax highlighting.</td></tr>
+</table>
+<h3>Limits</h3>
+<ul>
+  <li>The Cairo renderer draws on the CPU. Full-resolution images updated every frame at <code>-qh</code> render slowly but correctly, so keep demo images moderately sized.</li>
+  <li>There's no live preview: you edit, render and watch. <code>-s</code> and <code>-n</code> keep that loop short.</li>
+  <li>3Blue1Brown's own <code>manimgl</code> is a separate project with an incompatible API. Tutorials for one often don't work in the other, so check that an example imports <code>from manim import *</code>.</li>
+</ul>
+
+</main>
+</body>
+</html>

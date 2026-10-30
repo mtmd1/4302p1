@@ -55,10 +55,10 @@ Let's try applying a 41 by 41 box blur to this image.
 Wow! That took a long time. I may have exaggerated it slightly, but the roughly N milliseconds that this actually took to process is equivalent to 30 percent of the per-frame time budget game developers have when they aim for that smooth sixty frames.
 
 $$
-    \frac{1}{60} = 0.016\bar{7} \text{s} = 16.\bar{7} \text{ms}
+    \frac{1}{60} = 0.01\bar{6} \text{s} = 16.\bar{6} \text{ms}
 $$
 $$
-    \frac{100 \cdot N}{16.\bar{7}} = 30\%
+    \frac{100 \cdot N}{16.\bar{6}} = 30\%
 $$
 
 Let's do some maths. Our kernel is not very big, but even at this size, we're already processing almost seventeen hundred ($41\cdot41=1681$) pixels, per pixel, each time fetching all those values from memory, summing and dividing them, then writing the new pixel value to the write buffer.
@@ -67,7 +67,7 @@ In GPU land, the summing and dividing are almost free. There's also only one wri
 
 In GPU programming, when you look up the value of a texture at a particular position, we call that a ``tap.'' % themoreyouknow
 
-Our current implementation does almost 4 billion taps ($41\cdot41\cdot1920\cdot1080=3,485,721,600$). In 4K, that would be 14 billion ($41\cdot41\cdot3840\cdot2160=13,942,886,400$), which explains why our blur is so slow.
+Our current implementation does almost three and a half billion taps ($41\cdot41\cdot1920\cdot1080=3,485,721,600$). In 4K, that would be 14 billion ($41\cdot41\cdot3840\cdot2160=13,942,886,400$), which explains why our blur is so slow.
 
 You'll also notice these boxy artifacts, which don't resemble what we would expect a camera's blur to look like. In fact, the box blur is a very naive approach to blurring, and in order to understand modern graphics, we'll need to learn the Gaussian blur.
 
@@ -107,11 +107,11 @@ So how do we optimise this?
 Currently, our blur is the result of a two-dimensional weight function.
 
 $$
-    \text{blur}(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ \text{image}[x+i, y+j] \cdot w(i, j) \Bigr]\\
+    \text{blur}(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot w(i, j) \Bigr]\\
 $$
 $$
     w(x, y) = \frac{1}{2 \pi \sigma^2} e^{\frac{- x^2 - y^2}{2 \sigma^2}}
-$$`'
+$$
 
 For example, let's say our weight function produces something like this kernel. % Show an example 3x3 gaussian kernel
 
@@ -136,12 +136,12 @@ $$
 This convolution is our blur function, represented here by two sums, which we would implement as a 2D nested loop.
 
 $$
-    (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{i=-n} \Bigl[ \text{image}[x+i, y+j] \cdot w(i, j)\Bigr]
+    (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot w(i, j)\Bigr]
 $$
 
-The astute viewer will notice that this formulation is of polynomial complexity in $O(n^2)$ per pixel, because we're iterating across all $(2n+1)^2$ pixels in the kernel.
+The astute viewer will notice that this formulation is of quadratic complexity, $O(n^2)$, per pixel, because we're iterating across all $(2n+1)^2$ pixels in the kernel.
 
-The question we should be asking is: does this \textit{have} to be in polynomial time? Or, equivalently: does our weight function have to be two-dimensional?
+The question we should be asking is: does this \textit{have} to be quadratic? Or, equivalently: does our weight function have to be two-dimensional?
 
 Look again at this example kernel. Doesn't it look sort of symmetric?
 
@@ -182,19 +182,19 @@ $$
 Substituting this into our blur equation, we have successfully linearly separated the $i$ and $j$ iterators, which can now be pulled out of their respective loops.
 
 $$
-    (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{i=-n} \Bigl[ \text{image}[x+i, y+j] \cdot a[i] \cdot b[j]\Bigr]
+    (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot a[i] \cdot b[j]\Bigr]
 $$
-We can take the $i$ variable out of the outer sum
+We can pull $a[i]$ out of the inner sum, since it doesn't depend on $j$
 $$
-    (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot \sum^{n}_{i=-n} \Bigl[ \text{image}[x+i, y+j] \cdot b[j]\Bigr]
+    (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot b[j]\Bigr]
 $$
-To see that what we have in the inner sum is equivalent to a 1D convolution on the y axis
+To see that what we have in the inner sum is equivalent to a 1D convolution on the y axis, evaluated at $(x+i, y)$. Call this $V = I *_y b$
 $$
-    (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot (\text{image}_y * b_y)
+    (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot V[x+i, y]
 $$
 Making our outer sum reduce to another 1D convolution on the x axis, applied to that initial convolution.
 $$
-    (I * W)(x, y) = (\text{image}_x * a) \text{image}_y * b_y)
+    (I * W)(x, y) = \bigl((I *_y b) *_x a\bigr)(x, y)
 $$
 
 What we've proven here is that our 2D convolution is mathematically equivalent to 2 chained 1D convolutions.
@@ -203,7 +203,7 @@ The maths is, of course, the same, which is the point. But the computation is no
 
 Because, where we previously had three point five billion taps to execute ($41\cdot41\cdot1920\cdot1080=3,485,721,600$), we now have only one-hundred-and-seventy \textit{million} ($2\cdot41\cdot1920\cdot1080=170,035,200$).
 
-This is a \textit{95 percent} reduction in the number of memory reads our algorithm requires ($1-(170035200/3485721600)\cdot100=95.12$).
+This is a \textit{95 percent} reduction in the number of memory reads our algorithm requires ($(1-170035200/3485721600)\cdot100=95.12$).
 
 What's even better is that this improvement in time complexity does \textbf{not} come at the cost of space complexity.
 
@@ -219,7 +219,19 @@ This is great. I'm a huge fan. But our blur still takes N2 milliseconds, which, 
 % MARK: Kawase
 \section{Masaki Kawase}
 
+Masaki Kawase is a Japanese graphics programmer best known for his 2003 talk at GDC on post-processing effects in Xbox racing game DOUBLE S.T.E.A.L, in which he presented the first ever Kawase blur, an optimisation based on what happens when you chain convolutions together.
 
+What do you think will happen to this gaussian blur when I blur the image a second time?
+
+As you'd expect, the image is more blurred. What about a box blur?
+
+Also more blurred. But wait: something else has changed. The boxy artifacts we so disliked are gone. Why?
+
+Convolution is associative, so when we do two passes of any kernel on an image, that's the same as doing one pass on the image with the kernel convolved with itself.
+
+$$
+    (I * W) * W = I * (W * W)
+$$
 
 
 \clearpage
