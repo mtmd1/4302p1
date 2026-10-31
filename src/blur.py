@@ -11,6 +11,10 @@ channel count, as float32.
 By default blurs operate in linear light: sRGB input is decoded before the blur
 and re-encoded after, as a game engine's HDR buffer would be. Pass linear=False
 to blur the encoded values directly.
+
+Textures are 32-bit floats by default, so comparisons between methods are exact.
+Pass half=True for 16-bit floats (rgba16f), the format games and Acerola use.
+Every blur here is bound by memory reads, so half precision runs 1.5-3x faster.
 """
 
 import math
@@ -232,7 +236,7 @@ _SAMPLED = {"kawase", "resample", "dual_kawase_down", "dual_kawase_up"}
 # MARK: GPU plumbing
 
 _ctx: moderngl.Context | None = None
-_programs: dict[str, moderngl.ComputeShader] = {}
+_programs: dict[tuple[str, str], moderngl.ComputeShader] = {}
 
 
 def context() -> moderngl.Context:
@@ -246,10 +250,12 @@ def context() -> moderngl.Context:
     return _ctx
 
 
-def _program(name: str) -> moderngl.ComputeShader:
-    if name not in _programs:
-        _programs[name] = context().compute_shader(_HEADER + _SHADERS[name])
-    return _programs[name]
+def _program(name: str, image_format: str) -> moderngl.ComputeShader:
+    key = (name, image_format)
+    if key not in _programs:
+        source = (_HEADER + _SHADERS[name]).replace("rgba32f", image_format)
+        _programs[key] = context().compute_shader(source)
+    return _programs[key]
 
 
 @dataclass
@@ -263,7 +269,8 @@ class _Pass:
 
     def dispatch(self):
         ctx = context()
-        program = _program(self.program)
+        half = self.destination.dtype == "f2"
+        program = _program(self.program, "rgba16f" if half else "rgba32f")
         width, height = self.destination.size
         program["size"] = (width, height)
         for name, value in self.uniforms.items():
@@ -286,13 +293,14 @@ class _Textures:
     texture is never handed out, so repeated runs all start from the same data.
     """
 
-    def __init__(self, keep: bool):
+    def __init__(self, keep: bool, half: bool):
         self.keep = keep
+        self.dtype = "f2" if half else "f4"
         self.pools: dict[tuple[int, int], list[moderngl.Texture]] = {}
         self.all: list[moderngl.Texture] = []
 
     def new(self, size: tuple[int, int], data: bytes | None = None) -> moderngl.Texture:
-        texture = context().texture(size, 4, data, dtype="f4")
+        texture = context().texture(size, 4, data, dtype=self.dtype)
         texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
         texture.repeat_x = texture.repeat_y = False  # Clamp to edge
         self.all.append(texture)
@@ -315,16 +323,19 @@ class _Textures:
 
 def _read(texture: moderngl.Texture) -> np.ndarray:
     width, height = texture.size
-    return np.frombuffer(texture.read(), dtype=np.float32).reshape(height, width, 4).copy()
+    dtype = np.float16 if texture.dtype == "f2" else np.float32
+    return np.frombuffer(texture.read(), dtype=dtype).reshape(height, width, 4).astype(np.float32)
 
 
-def _run(img, build, *, linear: bool, steps: bool, repeat: int, in_place: bool = False) -> Result:
+def _run(
+    img, build, *, linear: bool, steps: bool, repeat: int, half: bool, in_place: bool = False
+) -> Result:
     """Upload img, run the passes that build(source, textures) returns, and read back."""
     rgba, channels = _prepare(img, linear)
-    data = rgba.tobytes()
+    data = rgba.astype(np.float16 if half else np.float32).tobytes()
     height, width = rgba.shape[:2]
 
-    textures = _Textures(keep=steps)
+    textures = _Textures(keep=steps, half=half)
     try:
         source = textures.new((width, height), data)
         passes: list[_Pass] = build(source, textures)
@@ -398,6 +409,7 @@ def box(
     linear: bool = True,
     steps: bool = False,
     repeat: int = 1,
+    half: bool = False,
 ) -> Result:
     """Average every pixel within radius, giving a (2 * radius + 1) square kernel.
 
@@ -407,7 +419,7 @@ def box(
     wrong and changes from run to run.
     """
     return _convolve(
-        img, radius, 0.0, separable=separable, race=race, linear=linear, steps=steps, repeat=repeat
+        img, radius, 0.0, separable=separable, race=race, linear=linear, steps=steps, repeat=repeat, half=half
     )
 
 
@@ -420,6 +432,7 @@ def gaussian(
     linear: bool = True,
     steps: bool = False,
     repeat: int = 1,
+    half: bool = False,
 ) -> Result:
     """Weight pixels by a Gaussian of standard deviation sigma.
 
@@ -431,7 +444,7 @@ def gaussian(
     if radius is None:
         radius = math.ceil(3 * sigma)
     return _convolve(
-        img, radius, float(sigma), separable=separable, linear=linear, steps=steps, repeat=repeat
+        img, radius, float(sigma), separable=separable, linear=linear, steps=steps, repeat=repeat, half=half
     )
 
 
@@ -442,6 +455,7 @@ def kawase(
     linear: bool = True,
     steps: bool = False,
     repeat: int = 1,
+    half: bool = False,
 ) -> Result:
     """Kawase blur: one full-resolution pass of 4 diagonal bilinear taps per offset."""
 
@@ -454,7 +468,7 @@ def kawase(
             source = passes[-1].destination
         return passes
 
-    return _run(img, build, linear=linear, steps=steps, repeat=repeat)
+    return _run(img, build, linear=linear, steps=steps, repeat=repeat, half=half)
 
 
 def _halvings(ratio: int) -> int:
@@ -489,7 +503,13 @@ def _pyramid(down: str, up: str | None, levels: int, down_taps: int, up_taps: in
 
 
 def downscale(
-    img, ratio: int = 2, *, linear: bool = True, steps: bool = False, repeat: int = 1
+    img,
+    ratio: int = 2,
+    *,
+    linear: bool = True,
+    steps: bool = False,
+    repeat: int = 1,
+    half: bool = False,
 ) -> Result:
     """Shrink by ratio, a power of two, one halving at a time.
 
@@ -498,11 +518,17 @@ def downscale(
     halvings; steps=True returns each one.
     """
     build = _pyramid("resample", None, _halvings(ratio), 1, 1)
-    return _run(img, build, linear=linear, steps=steps, repeat=repeat)
+    return _run(img, build, linear=linear, steps=steps, repeat=repeat, half=half)
 
 
 def upscale(
-    img, ratio: int = 2, *, linear: bool = True, steps: bool = False, repeat: int = 1
+    img,
+    ratio: int = 2,
+    *,
+    linear: bool = True,
+    steps: bool = False,
+    repeat: int = 1,
+    half: bool = False,
 ) -> Result:
     """Grow by ratio, a power of two, one bilinear doubling at a time.
 
@@ -518,18 +544,24 @@ def upscale(
             source = passes[-1].destination
         return passes
 
-    return _run(img, build, linear=linear, steps=steps, repeat=repeat)
+    return _run(img, build, linear=linear, steps=steps, repeat=repeat, half=half)
 
 
 def downscale_upscale(
-    img, levels: int = 4, *, linear: bool = True, steps: bool = False, repeat: int = 1
+    img,
+    levels: int = 4,
+    *,
+    linear: bool = True,
+    steps: bool = False,
+    repeat: int = 1,
+    half: bool = False,
 ) -> Result:
     """Halve levels times, then double back, using plain bilinear taps.
 
     levels=4 reaches 1/16 resolution, Acerola's deepest setting.
     """
     build = _pyramid("resample", "resample", levels, 1, 1)
-    return _run(img, build, linear=linear, steps=steps, repeat=repeat)
+    return _run(img, build, linear=linear, steps=steps, repeat=repeat, half=half)
 
 
 def dual_kawase(
@@ -540,6 +572,7 @@ def dual_kawase(
     linear: bool = True,
     steps: bool = False,
     repeat: int = 1,
+    half: bool = False,
 ) -> Result:
     """Dual Kawase blur (Bjorge, SIGGRAPH 2015): downscale_upscale with smarter taps.
 
@@ -548,7 +581,7 @@ def dual_kawase(
     standard deviation slider for it.
     """
     build = _pyramid("dual_kawase_down", "dual_kawase_up", levels, 5, 8, {"offset": float(offset)})
-    return _run(img, build, linear=linear, steps=steps, repeat=repeat)
+    return _run(img, build, linear=linear, steps=steps, repeat=repeat, half=half)
 
 
 # MARK: Image IO

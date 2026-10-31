@@ -60,3 +60,9 @@ def test_tap_counts():
 def test_race_differs_from_buffered(image):
     raced = blur.box(image, 8, race=True).image
     assert not np.allclose(raced, blur.box(image, 8).image, atol=1e-3)
+
+
+def test_half_precision_matches(image):
+    full, half = blur.dual_kawase(image, 3), blur.dual_kawase(image, 3, half=True)
+    np.testing.assert_allclose(half.image, full.image, atol=2e-3)
+    assert half.image.dtype == np.float32

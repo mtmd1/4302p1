@@ -27,117 +27,249 @@
 
 The humble blur is one of the most expensive techniques in computer graphics.
 
-It can be more costly than ray tracing an entire scene when unoptimised.
+% ANIM: Quick montage, each clip credited on screen: a frosted-glass panel on a phone and on a desktop, the glow around a game's headlights, a depth-of-field shot with a soft background.
+Yet we see blurs everywhere: the frosted glass behind windows on your phone and desktop~\cite{android:window-blurs,kde:kwin-blur-source}, the glow around bright lights in a game, the soft background of a depth-of-field shot~\cite{kawase:gdc2003}. All of them redrawn every frame in a time budget of milliseconds shared with everything else on screen.
 
-Yet, we see blurs used everywhere, even in realtime applications like video games.
-
-Today I will explain why blurring an image can be so expensive, and how modern GPUs do it in a fraction of a millisecond.
+Let me explain why blurring an image is so costly, and how modern GPU techniques do it in a fraction of a millisecond.
 
 
 % MARK: Box
 \section{Box Blur}
 
-First, we'll represent our image as a two-dimensional matrix of floats between 0 and 1.
+% ANIM: Start on the test photo. Zoom in until the pixel grid shows, then each pixel cross-fades into its value (0.00 to 1.00), so the picture becomes a grid of numbers.
+% Pull the photo apart into its R, G and B planes; G and B slide off-screen, leaving one greyscale channel.
+First, let's treat our image as three two-dimensional matrices of floats between 0 and 1, one per colour channel, but each blurs indpendently, so we can look at just one.
 
-In RGB, there are three such arrays, but our blur can be applied independently to each, so let's consider just the one channel.
+% ANIM: A small number grid (say 6x6) beside an empty grid of the same size, the write buffer. A 3x3 highlight sweeps across the left grid in raster order: the 9 cells light up, their values fly into a "sum / 9" readout, and the result drops into the matching cell on the right.
+% Speed up after the first few pixels. When the highlight hangs off a corner, the out-of-bounds cells are drawn hatched and the readout becomes "sum / 4".
+To blur it, we loop through each pixel and set it to the average of the pixels in a square around it, ignoring any positions that fall off the edge. Each result goes into a second buffer, so we never read a pixel we've already blurred.
 
-You can blur an image by looping through each pixel and setting it to the average of the pixel values in some square grid around it.
+% ANIM: Back to the full photo, with a 41x41 kernel outline drawn on it to scale. Freeze for ~2 s on the unblurred photo with a loading spinner (cut the music), then a TADA sfx as the blurred image snaps in.
+% All blurs and timings in this video: src/blur.py on an RTX 4090, ported from Acerola's implementations. Credit on screen.
+Let's try a 41 by 41 box blur on this image~\cite{youtube:acerola-blur}.
 
-On the edges, you ignore grid positions that don't have associated pixels; they aren't included in the sum, nor do they contribute to the count.
+% ANIM: "4.5 ms" readout, then a horizontal bar labelled "1 frame at 60 FPS = 16.6 ms" fills 27% of the way in red.
+% All timings: blur.py with half=True (16-bit textures, as games use), RTX 4090, 1080p.
+Wow! That took a long time. I exaggerated slightly, but the roughly 4.5 milliseconds this actually took is over a quarter of the frame budget a game has at a smooth sixty frames per second.
 
-Each pixel writes its value to a write buffer, a second array that holds our intermediary values, to avoid race conditions.
+\[
+    \frac{1}{60} = 0.01\bar{6} \text{ s} = 16.\bar{6} \text{ ms}
+\]
+\[
+    \frac{100 \cdot 4.5}{16.\bar{6}} = 27\%
+\]
 
-Let's try applying a 41 by 41 box blur to this image.
+% ANIM: One output pixel with lines fanning out to every Nth pixel in its 41x41 window (N a scene parameter, so the fan reads as lines rather than a smudge), with a "x 1681" label. Each line flashes as it's read, a few at a time, then all at once.
+% "themoreyouknow" card (shooting star + chime) on the word "taps".
+Our kernel isn't very big, but every pixel still reads almost seventeen hundred ($41\cdot41=1681$) values from memory, sums them, and divides. On a GPU, the arithmetic and the single write are almost free; what slows us down are the \textbf{memory reads}, which GPU programmers call ``taps.''
 
-% At this point, stall the video momentum for a moment and show a loading spinner
-% Then, a TADA sfx when it's done
+% ANIM: Start the running TAP COUNTER that comes back in every section: a single bar labelled "taps per pixel: 1681".
+% Under it, an odometer rolls 1681 x 1920 x 1080 up to 3,485,721,600; the frame then grows to 4K and the odometer rolls on to 13,942,886,400.
+That's almost three and a half billion taps per frame ($41\cdot41\cdot1920\cdot1080=3{,}485{,}721{,}600$), or 14 billion in 4K ($41\cdot41\cdot3840\cdot2160=13{,}942{,}886{,}400$).
 
-Wow! That took a long time. I may have exaggerated it slightly, but the roughly 7 milliseconds that this actually took to process is equivalent to four tenths of the per-frame time budget game developers have when they aim for that smooth sixty frames.
-
-$$
-    \frac{1}{60} = 0.01\bar{6} \text{s} = 16.\bar{6} \text{ms}
-$$
-$$
-    \frac{100 \cdot 7}{16.\bar{6}} = 42\%
-$$
-
-Let's do some maths. Our kernel is not very big, but even at this size, we're already processing almost seventeen hundred ($41\cdot41=1681$) pixels, per pixel, each time fetching all those values from memory, summing and dividing them, then writing the new pixel value to the write buffer.
-
-In GPU land, the summing and dividing are almost free. There's also only one write per pixel. What slows us down is the number of \textbf{memory reads}.
-
-In GPU programming, when you look up the value of a texture at a particular position, we call that a ``tap.'' % themoreyouknow
-
-Our current implementation does almost three and a half billion taps ($41\cdot41\cdot1920\cdot1080=3,485,721,600$). In 4K, that would be 14 billion ($41\cdot41\cdot3840\cdot2160=13,942,886,400$), which explains why our blur is so slow.
-
-You'll also notice these boxy artifacts, which don't resemble what we would expect a camera's blur to look like. In fact, the box blur is a very naive approach to blurring, and in order to understand modern graphics, we'll need to learn the Gaussian blur.
+% ANIM: Zoom into a bright highlight on a dark background: the blur has turned it into a hard-edged square. Inset beside it: the same highlight out of focus on a real camera, round and soft.
+You'll also notice these boxy artifacts, which look nothing like a camera's blur. Modern graphics uses something better: the Gaussian blur.
 
 
 % MARK: Gaussian
 \section{Gaussian Blur}
 
-Consider a representative box blur kernel. Instead of assuming each pixel's weight to be 1, unless it's out of bounds, and dividing by the total count, let's take the pixel's x and y position in kernel space and pass those to a weight function.
+% ANIM: Back to the small number grid with a 3x3 kernel over it, every kernel cell showing "1" and the readout "sum / count".
+% Each cell's (x, y) offset from -1 to 1 appears in its corner, then each "1" morphs into "w(x, y)" and the readout becomes "sum / sum of weights".
+Consider our box blur kernel. Instead of giving every pixel a weight of 1 and dividing by the count, let's pass each pixel's x and y position in the kernel to a weight function, then divide by the sum of the weights. That way, the weight function can be whatever we like.
 
-We can then weight each pixel by the output of that function, and sum the weights together to take the average at the end.
+% ANIM: "w(x, y)" is replaced by the formula below. A 3D bell surface rises out of the kernel grid, and the cells take on its heights as a heatmap.
+For a gaussian blur, we use the gaussian function, also called the normal distribution~\cite{web:wikipedia-gaussian-blur}.
 
-Thanks to this abstraction, we can define our weight function however we like.
-
-In order to get a gaussian blur, we'll use a standard gaussian function, also called the normal distribution.
-
-$$
+\[
     w(x, y) = \frac{1}{2 \pi \sigma^2} e^{\frac{- x^2 - y^2}{2 \sigma^2}}
-$$
+\]
 
-We've now introduced a second parameter, the standard deviation ``sigma,'' which we can modulate as well as the kernel size.
+% ANIM: GaussianSweep (src/examples/demo_gaussian_sweep.py): sigma ticks up at a fixed r = 6 until square edges appear in the image.
+% Side panel: a 1D slice of the bell with the kernel drawn as a fixed window [-r, r]. As sigma grows the bell widens past the window, the cut-off tails are shaded red, and what's left inside the window flattens towards a box.
+This gives us a second parameter: the standard deviation sigma. It makes the image blurrier, until boxes reappear, because our kernel now truncates the edges of the function we want to apply.
 
-If I crank up the standard deviation, the image will get more blurred, until suddenly these boxes reappear.
+% ANIM: Same side panel: the window grows to [-3 sigma, 3 sigma] and the tails come back inside; the boxes in the image melt away.
+To fix this, let's always make the kernel at least $6\sigma$ wide~\cite{web:dspse-gaussian-kernel}.
 
-This is because our weight function is in kernel space, so it does not vary as the size of our kernel changes. The kernel is like a window over the weight function; here, our kernel is clearly too small for the function we want to apply.
+% ANIM: Split screen with a wipe slider: box blur r = 20 on the left, gaussian sigma = 7 on the right, each with its kernel heatmap underneath (flat square vs bell).
+% Zoom both halves into the highlight from the box section: square on the left, round on the right.
+At roughly the same kernel size as our 41x41 box blur, the gaussian is less intense, but looks nice and smooth. Huzzah, champagne! % This is a reference to one of my lecturers
 
-To fix this, let's set our kernel size to always be at least $6\sigma$~\cite{web:dspse-gaussian-kernel}.
-
-Now we can compare the Gaussian with our box blur. To get roughly the same kernel size, we'll use a standard deviation of seven. The gaussian looks less intensely blurred, but there's also no artifacts. Yay!
-
-The gaussian blur is the standard blur in computer graphics. But, at the same kernel size, it is just as slow as the box blur.
-
-So how do we optimise this?
+% ANIM: A "4.5 ms" readout under each half. TAP COUNTER: the gaussian gets its own bar, also 1681.
+The gaussian blur is \textit{the} standard blur in computer graphics. But it's just as slow as the box blur. So how do we optimise this?
 
 % MARK: Separation
 \section{Linear Separation}
 
+Well, it turns out that our kernels are \textbf{linearly separable}~\cite{web:wikipedia-gaussian-blur}.
+
+\[
+    e^{-x^2 - y^2} = e^{-x^2} \cdot e^{-y^2}
+\]
+
+% Show the 3x3 kernel splitting into the outer product <1, 2, 1> (x) <1, 2, 1>
+% Show two buffers with the test image in Ping, then show it blurred horizontally on the pong buffer, then the final image back in the ping buffer
+That means is our 2D kernel is equal to a column of weights multiplied by a row of weights. Instead of one pass over a 41x41 square, we can blur every row, then blur every column of the result.
+
+The output is exactly identical for both of our blurs, but our taps per pixel drop to 82, and those 4.5 milliseconds are now 0.2.
+
+% ANIM: TAP COUNTER: the gaussian's 1681 bar splits into two thin bars of 41 (horizontal, vertical) that stack into a single 82 bar, labelled "separated gaussian". Beside it, the "4.5 ms" readout rolls down to "0.2 ms".
+\[
+    41^2 = 1681 \quad\longrightarrow\quad 2 \cdot 41 = 82
+\]
+
+% ANIM: A radius slider under the image is dragged up; the 82 bar grows with it (2(2r + 1)) while the image gets blurrier, then the slider springs back to r = 20.
+That's 95 percent fewer taps, but the cost still grows with the blur's radius.
+
+We can do better.
+
+% MARK: Kawase
+\section{Masaki Kawase}
+
+% ANIM: Title card of the GDC 2003 slides, then a few seconds of DOUBLE-S.T.E.A.L gameplay with its glow and glare effects (video:doublesteal-gameplay), credited on screen.
+In his 2003 GDC talk on post-processing in the Xbox racing game DOUBLE-S.T.E.A.L, Masaki Kawase presented the Kawase blur, based on what happens when you chain blurs together~\cite{kawase:gdc2003,video:doublesteal-gameplay}.
+
+% ANIM: The gaussian-blurred photo; a second pass sweeps over it and it gets blurrier. Then the box-blurred photo, with the square highlight from earlier circled: on the second pass the square softens into a round blob.
+What do you think will happen to this gaussian blur when I blur the image a second time? As you'd expect, it gets blurrier. What about a box blur? Also blurrier. But wait: the boxy artifacts are gone. Why?
+
+Convolution is associative, so two passes of a kernel on an image are the same as one pass with the kernel convolved with itself.
+
+\[
+    (I * W) * W = I * (W * W)
+\]
+
+% ANIM (left): Two 3x3 grids of 1s. One slides over the other one offset at a time, and each overlap count is written into a growing 5x5 grid, giving 1 2 3 2 1 / 2 4 6 4 2 / 3 6 9 6 3 / ... Then the cells take on a heatmap by value, brightest in the centre (the curve itself is already visible in the plot).
+% ANIM (right): Axes plotting the kernel's middle row, normalised. The flat line y = 1 over [-1, 1] morphs into a triangle over [-2, 2].
+Let's watch that happen to our box kernel. Already, it's no longer a box blur. And if we keep convolving it...
+
+% ANIM: Speed up. Four or five more passes, each convolving with one more 3x3 box: the left grid grows (7x7, 9x9, ...) and the plot goes triangle -> rounded hump -> bell.
+% On the last step, a dashed true gaussian is overlaid on the plot and matches it almost exactly.
+% xQc what's that thing? Is that a """CENTRAL LIMIT THEOREM""" https://www.youtube.com/watch?v=56neS8vCUbE
+
+As it turns out, chaining gaussian blurs makes a stronger gaussian blur~\cite{web:wikipedia-gaussian-blur}, but chaining box blurs \textit{also} makes a gaussian blur.
+
+So the question is no longer ``how do we compute the kernel faster?'' but ``what's the cheapest blur we can repeat?'' Kawase found an answer inside the GPU.
+
+% ANIM: Zoom into four pixels with different values, centres marked with dots, and a crosshair labelled with its (u, v) texture coordinate. The crosshair drifts between them;
+% lines from it to the four centres thicken as it gets closer to each, and a readout shows the interpolated value.
+When a GPU looks up a texture, it uses non-integer coordinates from 0 to 1, which rarely land on a pixel, so a sampler decides what to return. The most common method to decide that is bilinear filtering: a weighted average of the four nearest pixel centres, based on how close the point is to each.
+
+% ANIM: The crosshair snaps to the corner the four pixels share; all four weights read 0.25 and the 2x2 block lights up as one. Tap counter for this lookup: 1.
+So, when we sample exactly where four pixels meet, we get a 2x2 box blur in a single tap, which GPU hardware is built to do very fast.
+
+% ANIM: A 3x3 patch with four crosshairs at the corners of the centre pixel, each lighting up its 2x2 block in its own translucent colour.
+% Where blocks overlap the colours add up, and the counts appear in the cells: 1 2 1 / 2 4 2 / 1 2 1. The matrix slides over next to the triangle plot from before.
+Kawase takes four of these samples, at the four corners of a pixel, and averages them. The centre ends up with a weight of four, the sides two, and the corners one, and that looks a lot like the start of our gaussian approximation~\cite{kawase:gdc2003}.
+
+% ANIM: Five passes on the photo. Each pass, the four crosshairs step out along the diagonals (an offset label ticks 0, 1, 2, 2, 3) and the image gets blurrier.
+% In a corner, two buffers labelled A and B swap "read" and "write" tags on every pass.
+% ANIM: Repeat this same pass on the photo with no offset. A pass counter ticks 1, 2, 3 ... and races to 57 while the blur barely creeps outward; the tap counter climbs to 228.
+But repeat this as it is, and once neighbours are nearly identical, averaging them again barely helps: to match what's coming, we'd need 57 passes.
+% Measured with blur.kawase(offsets=(0,)*57): sigma 5.34, identical to five passes at (0, 1, 2, 2, 3).
+
+% ANIM: Back to five passes. The crosshairs step out along the diagonals, leaving a gap of untouched pixels between them; on the photo, the gaps vanish because each pixel is already smeared into its neighbours.
+% Inset: jump straight to a big offset on the sharp photo and the gaps print as a ghostly grid.
+So Kawase reaches further each pass, pushing the samples out along the diagonals~\cite{kawase:gdc2003}. The gaps between them land on pixels the earlier passes already smeared, so they vanish, as long as the offsets climb gently. A common choice is five passes, at the offsets displayed~\cite{web:intel-kawase}. Swapping between two buffers, this needs no more memory than our separated blur.
+% The GDC deck shows passes 1-3 (offsets 0, 1, 2) and says "Repeat as many times as you like"; the 0, 1, 2, 2, 3 preset is Intel's (Fig. 10), also used by Acerola.
+
+% ANIM: TAP COUNTER: the 82 bar shrinks to a separated gaussian's 70 at sigma 5.3, and a Kawase bar of 20 grows beside it.
+Five passes of four taps is 20 taps per pixel, for a result equivalent to a gaussian with a sigma of about 5.3. Compared to a separated gaussian that strong, Kawase needs less than a third of the taps, and half the time.
+
+\[
+    5 \cdot 4 = 20 \quad\text{vs.}\quad 2 \cdot (2 \lceil 3 \cdot 5.3 \rceil + 1) = 70
+\]
+% Measured with blur.py at 1080p, half=True: impulse response sigma 5.34; 0.087 ms (Kawase) vs 0.173 ms (separated gaussian, sigma 5.34).
+
+
+% MARK: Bjorge
+\section{Marius Bj{\o}rge}
+
+% ANIM: Zoom into the Kawase result until single pixels show: neighbouring pixels are nearly identical. A "low-pass filter" label slides in.
+Look closely at a blurred image. Neighbouring pixels are almost the same colour. A blur is a low-pass filter~\cite{web:wikipedia-gaussian-blur}: it's lossy, it destroys high spatial frequency content, and an image with no detail does not need full resolution.
+
+% ANIM: blur.downscale_upscale(steps=True): shrink four times with single taps, stretch back up. Then pan the photo one pixel per frame:
+% the naive result flickers and its blocks crawl, side by side with dual_kawase gliding smoothly. (Measured: ~6x more frame-to-frame change.)
+So let's shrink the image, then scale it back up with our bilinear filter. Well, those boxes are back. Worse, when the scene moves, they shimmer~\cite{web:intel-kawase}. Can we avoid these issues?
+
+% ANIM: Halving with one tap: the source grid splits into hard-edged 2x2 tiles, each flowing into one output pixel. Shift the photo one pixel and every tile regroups (flash).
+Why? When we halve, a single tap averages each 2 by 2 block on its own. The blocks never overlap, so their borders are baked in, and when the image moves a pixel, every block regroups. That's the shimmer.
+
+% ANIM: Add the four diagonal taps one by one, each lighting up a 2x2 block that straddles the neighbouring tiles; the hard tile borders blur into overlapping 4x4 patches.
+So as we shrink, let's reach into the neighbours: keep the centre tap, and add four of Kawase's diagonal taps, each straddling the blocks next door. No hard borders, no shimmer.
+
+% ANIM: Upscale: a single bilinear tap stretches one low-res pixel into a square-based pyramid (3D), and a field of them reads as a faint grid of diamonds.
+% Then eight taps in a ring around the new pixel; the pyramids round off into a soft dome.
+And on the way up, one bilinear tap stretches each pixel into a square pyramid, which is where the blockiness comes from. Instead, take eight taps in a ring, so no direction is favoured, and the result comes out round.
+% Bjorge's notes: the downsample corners "smudge in some information from all neighbouring pixels"; the upsample ring "was chosen in order to get a nice smooth circular shape".
+
+% ANIM: DualKawasePyramid (src/examples/demo_dual_kawase.py), with the two tap patterns inset: centre x4 plus four diagonals going down; eight taps in a ring going up.
+That's exactly what Marius Bj{\o}rge, a graphics engineer at ARM, presented at SIGGRAPH in 2015, to make bloom effects affordable on mobile phones~\cite{arm:siggraph2015-bandwidth}. Five taps going down, eight in a ring coming up. He called it the dual filter, for its two kernels. Nowadays, we call it the Dual Kawase blur~\cite{web:frostkiwi-blurs}.
+
+% ANIM: TAP COUNTER: each level's cost stacks into one bar (5/4 + 5/16 + ... + 8/64 + ... + 8) that tops out at ~12.
+Each downscale quarters the number of pixels to process, so the whole down and back up costs about 12 taps per original pixel. And each extra level doubles the width of the blur for almost no cost: four levels give a sigma of about 9, five about 18, both in about 50 microseconds.
+
+
+% MARK: Outro
+\section{Conclusion}
+
+% ANIM: The TAP COUNTER in full, one bar per section: 1681, 82, 20, 12, with FPS under each: 224, 5,000, 11,500, 21,700. The 27% frame-budget bar from the box section shrinks to a sliver.
+Our first naive box blur took over a quarter of the frame budget. Separation took it from seventeen hundred taps per pixel to 82. Kawase took it to 20. And the Dual Kawase does it in about 12, and can get wider at almost no extra cost.
+% The bars aren't the same strength (sigma 7, 7, 5.3, 8.9), but the trend only favours Dual Kawase: it is both the cheapest and the strongest.
+
+If my GPU did nothing but this blur, it could draw over twenty-one thousand frames per second.
+
+\[
+    5\left(\tfrac{1}{4} + \tfrac{1}{16} + \tfrac{1}{64} + \tfrac{1}{256}\right)
+    + 8\left(1 + \tfrac{1}{4} + \tfrac{1}{16} + \tfrac{1}{64}\right)
+    \approx 12.3 \text{ taps per pixel}
+\]
+% Measured with blur.dual_kawase(levels=4 and 5, half=True, repeat=1000): sigma 8.93 / 17.47, 0.046 / 0.050-0.056 ms. 1000 / 0.046 = 21,700 FPS.
+
+% ANIM: Credited clips: KDE's blurred panel, an Android blurred dialog, DOUBLE-S.T.E.A.L. bloom.
+That is why this technique powers KDE desktop's translucent panels~\cite{kde:kwin-dual-kawase-commit}, Android's window blurs~\cite{android:renderengine-kawase}, and many video games. By understanding the hardware, graphics programmers found the right maths.
+% KWin switched to Dual Kawase in January 2018 (Plasma 5.13). AOSP RenderEngine offers KawaseBlurFilter and KawaseBlurDualFilter for background blurs.
+
+
+
+\begin{appendices}
+% Full derivation, cut from the spoken script for time. Kept for the discussion session.
+\section{Linear Separation in Full}
+
 Currently, our blur is the result of a two-dimensional weight function.
 
-$$
-    \text{blur}(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot w(i, j) \Bigr]\\
-$$
-$$
+\[
+    \text{blur}(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot w(i, j) \Bigr]
+\]
+\[
     w(x, y) = \frac{1}{2 \pi \sigma^2} e^{\frac{- x^2 - y^2}{2 \sigma^2}}
-$$
+\]
 
 For example, let's say our weight function produces something like this kernel. % Show an example 3x3 gaussian kernel
 
-$$
+\[
     W =
     \begin{bmatrix}
         1 & 2 & 1 \\
         2 & 4 & 2 \\
         1 & 2 & 1 \\
     \end{bmatrix}
-$$
+\]
 
 % Show an example 5x5 image matrix
 Applying it to this image is a discrete convolution of the image matrix by the kernel matrix.
 
-$$
+\[
     I * W
-$$
+\]
 
 % Show the kernel convolving across the rows of the image matrix
 
 This convolution is our blur function, represented here by two sums, which we would implement as a 2D nested loop.
 
-$$
+\[
     (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot w(i, j)\Bigr]
-$$
+\]
 
 The astute viewer will notice that this formulation is of quadratic complexity, $O(n^2)$, per pixel, because we're iterating across all $(2n+1)^2$ pixels in the kernel.
 
@@ -147,15 +279,15 @@ Look again at this example kernel. Doesn't it look sort of symmetric?
 
 A property of the gaussian weight function is that the kernels it produces are \textbf{linearly separable}.
 
-$$
+\[
     e^{- x^2 - y^2} = e^{-x^2} \cdot e^{-y^2}
-$$
+\]
 
 What this means is that our example matrix can actually be produced by taking the outer product of two vectors.
 
 Unlike the dot product, which collapses vectors into a scalar, the outer product of two vectors of length $k$ expands them into a new $k$-by-$k$ matrix containing every combination of their components' products.
 
-$$
+\[
     \langle1, 2, 1\rangle \otimes \langle1, 2, 1\rangle
     =
     \begin{bmatrix}
@@ -169,39 +301,39 @@ $$
         2 & 4 & 2 \\
         1 & 2 & 1 \\
     \end{bmatrix}
-$$
+\]
 
 This is also the case for our box blur, which is trivially the outer product of all-one vectors.
 
 With this in mind, instead of having our weight function's $x$ and $y$ coordinates map into a single 2D matrix, we can get the weight by computing the product of two elements from two 1 dimensional matrices.
 
-$$
+\[
     w(x, y) = W[x, y] = a[x] \cdot b[y]
-$$
+\]
 
 Substituting this into our blur equation, we have successfully linearly separated the $i$ and $j$ iterators, which can now be pulled out of their respective loops.
 
-$$
+\[
     (I * W)(x, y) = \sum^{n}_{i=-n} \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot a[i] \cdot b[j]\Bigr]
-$$
+\]
 We can pull $a[i]$ out of the inner sum, since it doesn't depend on $j$
-$$
+\[
     (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot \sum^{n}_{j=-n} \Bigl[ I[x+i, y+j] \cdot b[j]\Bigr]
-$$
+\]
 To see that what we have in the inner sum is equivalent to a 1D convolution on the y axis, evaluated at $(x+i, y)$. Call this $V = I *_y b$
-$$
+\[
     (I * W)(x, y) = \sum^{n}_{i=-n} a[i] \cdot V[x+i, y]
-$$
+\]
 Making our outer sum reduce to another 1D convolution on the x axis, applied to that initial convolution.
-$$
+\[
     (I * W)(x, y) = \bigl((I *_y b) *_x a\bigr)(x, y)
-$$
+\]
 
 What we've proven here is that our 2D convolution is mathematically equivalent to 2 chained 1D convolutions.
 
 The maths is, of course, the same, which is the point. But the computation is now completely different.
 
-Because, where we previously had three point five billion taps to execute ($41\cdot41\cdot1920\cdot1080=3,485,721,600$), we now have only one-hundred-and-seventy \textit{million} ($2\cdot41\cdot1920\cdot1080=170,035,200$).
+Because, where we previously had three point five billion taps to execute ($41\cdot41\cdot1920\cdot1080=3{,}485{,}721{,}600$), we now have only one-hundred-and-seventy \textit{million} ($2\cdot41\cdot1920\cdot1080=170{,}035{,}200$).
 
 This is a \textit{95 percent} reduction in the number of memory reads our algorithm requires ($(1-170035200/3485721600)\cdot100=95.12$).
 
@@ -214,58 +346,7 @@ This gives us the exact same result with no additional memory cost, making this 
 Best of all, the method is mathematically identical. It does not approximate a Gaussian: it produces exactly the same result.
 
 This is great. I'm a huge fan. But our blur still takes 0.35 milliseconds, which, as far as modern graphics are concerned, is glacially slow.
-
-
-% MARK: Kawase
-\section{Masaki Kawase}
-
-Masaki Kawase is a Japanese graphics programmer best known for his 2003 talk at GDC on post-processing effects in Xbox racing game DOUBLE S.T.E.A.L, in which he presented the first ever Kawase blur, an optimisation based on what happens when you chain convolutions together.
-
-What do you think will happen to this gaussian blur when I blur the image a second time?
-
-As you'd expect, the image is more blurred. What about a box blur?
-
-Also more blurred. But wait: something else has changed. The boxy artifacts we so disliked are gone. Why?
-
-Convolution is associative, so when we do two passes of any kernel on an image, that's the same as doing one pass on the image with the kernel convolved with itself.
-
-$$
-    (I * W) * W = I * (W * W)
-$$
-
-Let's observe what happens when we convolve our box blur kernel with itself.
-
-% Animation of a 3x3 1-valued kernel convolving with another one to create a 5x5 pyramid-like
-% Plot on axes to show the line y=1 turning into a triangle
-
-Already, this is no longer a box blur. And if we keep convolving it...
-
-% Animation speeds up and four or five more convolutions are applied: the kernel on the left is convolved and expands, then the graph on the right updates
-
-% xQc what's that thing? Is that a """CENTRAL LIMIT THEOREM""" https://www.youtube.com/watch?v=56neS8vCUbE
-
-As it turns out, adding gaussian blurs to gaussian blurs makes a stronger gaussian blur, but adding box blurs to box blurs also makes a gaussian blur.
-
-This was already known before Kawase, but he combined it with one other thing.
-
-When GPU threads process pixels on the screen in parallel, they do so in texture coordinates, where each ``fragment'''s position is a cartesian tuple ranging from 0,0 in the bottom left to 1,1 in the top right.
-
-Since pixels are on a grid, texture lookups using these coordinates pass through a sampler object, which can be configured to handle the case where a coordinate doesn't land right in the middle of a pixel.
-
-The most common sampling method is bilinear filtering. In bilinear, the sampler finds the four pixels whose centres contain the lookup point and returns a weighted average of their values based on the relative distances on each side of the point.
-
-So, when the sample is at the intersection of four pixels, this is the same as a 2x2 box blur, except that GPU hardware is designed to carry out this specific operation very fast.
-
-And when Masaki Kawase decided to take four samples of the frame buffer at four intersections between pixels in a square, and average them together, leading to the centre one having a weight of four, the cardinal directions 2, and the corners 1, well, that looks a lot like the start of our gaussian approximation.
-
-Kawase's original method had six passes, and furthermore, it offset each subsequent pass by some distance along each diagonal. Using a ping-pong buffer, this costs no memory, and where our sigma 7 gaussian from before was making 1764 taps per pixel in its single pass, now we're doing 6 passes of 4 taps each, which is literally 1\% of the workload.
-
-
-% MARK: Bjorge
-\section{Marius Bj{\o}rge}
-
-
-
+\end{appendices}
 
 \clearpage
 \phantomsection
