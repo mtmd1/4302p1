@@ -52,13 +52,13 @@ Let's try applying a 41 by 41 box blur to this image.
 % At this point, stall the video momentum for a moment and show a loading spinner
 % Then, a TADA sfx when it's done
 
-Wow! That took a long time. I may have exaggerated it slightly, but the roughly N milliseconds that this actually took to process is equivalent to 30 percent of the per-frame time budget game developers have when they aim for that smooth sixty frames.
+Wow! That took a long time. I may have exaggerated it slightly, but the roughly 7 milliseconds that this actually took to process is equivalent to four tenths of the per-frame time budget game developers have when they aim for that smooth sixty frames.
 
 $$
     \frac{1}{60} = 0.01\bar{6} \text{s} = 16.\bar{6} \text{ms}
 $$
 $$
-    \frac{100 \cdot N}{16.\bar{6}} = 30\%
+    \frac{100 \cdot 7}{16.\bar{6}} = 42\%
 $$
 
 Let's do some maths. Our kernel is not very big, but even at this size, we're already processing almost seventeen hundred ($41\cdot41=1681$) pixels, per pixel, each time fetching all those values from memory, summing and dividing them, then writing the new pixel value to the write buffer.
@@ -213,8 +213,8 @@ This gives us the exact same result with no additional memory cost, making this 
 
 Best of all, the method is mathematically identical. It does not approximate a Gaussian: it produces exactly the same result.
 
-This is great. I'm a huge fan. But our blur still takes N2 milliseconds, which, as far as modern graphics are concerned, is glacially slow.
-% TODO: produce N2
+This is great. I'm a huge fan. But our blur still takes 0.35 milliseconds, which, as far as modern graphics are concerned, is glacially slow.
+
 
 % MARK: Kawase
 \section{Masaki Kawase}
@@ -232,6 +232,39 @@ Convolution is associative, so when we do two passes of any kernel on an image, 
 $$
     (I * W) * W = I * (W * W)
 $$
+
+Let's observe what happens when we convolve our box blur kernel with itself.
+
+% Animation of a 3x3 1-valued kernel convolving with another one to create a 5x5 pyramid-like
+% Plot on axes to show the line y=1 turning into a triangle
+
+Already, this is no longer a box blur. And if we keep convolving it...
+
+% Animation speeds up and four or five more convolutions are applied: the kernel on the left is convolved and expands, then the graph on the right updates
+
+% xQc what's that thing? Is that a """CENTRAL LIMIT THEOREM""" https://www.youtube.com/watch?v=56neS8vCUbE
+
+As it turns out, adding gaussian blurs to gaussian blurs makes a stronger gaussian blur, but adding box blurs to box blurs also makes a gaussian blur.
+
+This was already known before Kawase, but he combined it with one other thing.
+
+When GPU threads process pixels on the screen in parallel, they do so in texture coordinates, where each ``fragment'''s position is a cartesian tuple ranging from 0,0 in the bottom left to 1,1 in the top right.
+
+Since pixels are on a grid, texture lookups using these coordinates pass through a sampler object, which can be configured to handle the case where a coordinate doesn't land right in the middle of a pixel.
+
+The most common sampling method is bilinear filtering. In bilinear, the sampler finds the four pixels whose centres contain the lookup point and returns a weighted average of their values based on the relative distances on each side of the point.
+
+So, when the sample is at the intersection of four pixels, this is the same as a 2x2 box blur, except that GPU hardware is designed to carry out this specific operation very fast.
+
+And when Masaki Kawase decided to take four samples of the frame buffer at four intersections between pixels in a square, and average them together, leading to the centre one having a weight of four, the cardinal directions 2, and the corners 1, well, that looks a lot like the start of our gaussian approximation.
+
+Kawase's original method had six passes, and furthermore, it offset each subsequent pass by some distance along each diagonal. Using a ping-pong buffer, this costs no memory, and where our sigma 7 gaussian from before was making 1764 taps per pixel in its single pass, now we're doing 6 passes of 4 taps each, which is literally 1\% of the workload.
+
+
+% MARK: Bjorge
+\section{Marius Bj{\o}rge}
+
+
 
 
 \clearpage
