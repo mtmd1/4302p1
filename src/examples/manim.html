@@ -113,6 +113,7 @@ uv run render --list</code></pre>
 <h3>In</h3>
 <ul>
   <li><b>Code:</b> the scene file. Manim adds the file's folder to <code>sys.path</code>, which is why <code>from sample import test_card</code> works. <code>blur</code> is importable everywhere because uv installs the project.</li>
+  <li><b>Our photos:</b> source photos and footage live in <code>assets/</code>, which git tracks (<code>media/</code> is ignored). <code>from sample import photo</code>, then <code>photo()</code> returns <code>sands.jpg</code>, the 1080p skyline crop, as float RGBA ready for <code>blur</code>.</li>
   <li><b>Images:</b> <code>ImageMobject("photo.png")</code> or <code>ImageMobject(ndarray)</code>. Raster images get blurry when scaled up, so call <code>.set_resampling_algorithm(RESAMPLING_ALGORITHMS["nearest"])</code> when individual pixels should be visible.</li>
   <li><b>Vectors:</b> <code>SVGMobject("diagram.svg")</code>, for example to trace a figure from a source.</li>
   <li><b>Text:</b> <code>Text</code> renders system fonts through Pango. <code>Tex</code>/<code>MathTex</code> run your TeX Live install (<code>latex</code> → <code>dvisvgm</code>), so equations can be pasted straight from <code>script.tex</code>.</li>
