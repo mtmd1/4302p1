@@ -90,16 +90,23 @@ result.taps_per_pixel, result.gpu_ms            <span class="c"># numbers for th
 <p>Use <code>steps=True</code> with any blur. For a separable box or Gaussian blur, <code>steps[0]</code> is the horizontal-only pass, which is useful for the linear separation section.</p>
 
 <h2>4. Running it</h2>
+<h3>Clips for the video: <code>uv run render</code></h3>
+<pre><code>uv run render                                     <span class="c"># every scene in src/examples</span>
+uv run render demo_gaussian_sweep                 <span class="c"># every scene in one file</span>
+uv run render demo_dual_kawase:DualKawasePyramid  <span class="c"># one scene</span>
+uv run render -q l                                <span class="c"># 480p15 while drafting; default is 1080p60</span>
+uv run render --list</code></pre>
+<p><code>src/render.py</code> runs manim itself with caching disabled and a transparent background, then writes <code>media/resolve/&lt;file&gt;_&lt;Scene&gt;.mov</code> as ProRes 4444 with alpha, which free Resolve on Linux can read. Every clip uses that one format. A scene that needs a solid backdrop has to draw one.</p>
+<h3>Quick previews: manim directly</h3>
 <pre><code>uv run manim -pql src/examples/demo_gaussian_sweep.py GaussianSweep</code></pre>
 <table>
   <tr><th>Flag</th><th>Effect</th></tr>
-  <tr><td><code>-ql</code> <code>-qm</code> <code>-qh</code> <code>-qk</code></td><td>480p15 / 720p30 / 1080p60 / 2160p60. Work at <code>-ql</code> and render the final version at <code>-qh</code>.</td></tr>
+  <tr><td><code>-ql</code> <code>-qm</code> <code>-qh</code> <code>-qk</code></td><td>480p15 / 720p30 / 1080p60 / 2160p60.</td></tr>
   <tr><td><code>-p</code></td><td>Open the result when it's done.</td></tr>
   <tr><td><code>-s</code></td><td>Skip to the end and save only the last frame as a PNG. Fast for checking layout.</td></tr>
   <tr><td><code>-a</code></td><td>Render every scene in the file.</td></tr>
   <tr><td><code>-n 3,5</code></td><td>Render only animations 3 to 5.</td></tr>
-  <tr><td><code>-t</code>, <code>--format gif|webm|mov</code></td><td>Transparent background and other output formats, for compositing in your video editor.</td></tr>
-  <tr><td><code>--disable_caching</code></td><td>See the note below.</td></tr>
+  <tr><td><code>--disable_caching</code></td><td>See the note below. <code>uv run render</code> always passes it.</td></tr>
 </table>
 
 <h2>5. Input and output</h2>
@@ -113,11 +120,13 @@ result.taps_per_pixel, result.gpu_ms            <span class="c"># numbers for th
 </ul>
 <h3>Out</h3>
 <pre><code>media/
-  videos/&lt;file&gt;/&lt;quality&gt;/&lt;Scene&gt;.mp4        <span class="c"># the result</span>
+  resolve/&lt;file&gt;_&lt;Scene&gt;.mov                 <span class="c"># from uv run render: the clips for Resolve</span>
+  manim/                                      <span class="c"># render's own manim output and LaTeX cache</span>
+  videos/&lt;file&gt;/&lt;quality&gt;/&lt;Scene&gt;.mp4        <span class="c"># from plain manim previews</span>
   videos/&lt;file&gt;/&lt;quality&gt;/partial_movie_files/  <span class="c"># one clip per play(), cached</span>
   images/&lt;file&gt;/&lt;Scene&gt;.png                   <span class="c"># from -s</span>
   Tex/, texts/                                <span class="c"># rendered LaTeX and text cache</span></code></pre>
-<p class="note"><b>Caching trap:</b> manim skips re-rendering any <code>play()</code> whose hash hasn't changed. That hash covers the mobjects and animation arguments, not the code inside <code>blur.py</code> that an updater calls. After you edit <code>blur.py</code>, render with <code>--disable_caching</code>.</p>
+<p class="note"><b>Caching trap:</b> manim skips re-rendering any <code>play()</code> whose hash hasn't changed. That hash covers the mobjects and animation arguments, not the code inside <code>blur.py</code> that an updater calls. <code>uv run render</code> always disables the cache. For a plain <code>manim</code> preview after editing <code>blur.py</code>, pass <code>--disable_caching</code>.</p>
 
 <h2>6. What it can do for this talk</h2>
 <table>

@@ -1,7 +1,11 @@
-"""Procedural test images shared by the example scenes."""
+"""Test images shared by the example scenes: procedural ones and our photos."""
+
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+
+ASSETS = Path(__file__).resolve().parents[2] / "assets"
 
 
 def test_card(width: int = 480, height: int = 270, seed: int = 4302) -> np.ndarray:
@@ -27,4 +31,14 @@ def test_card(width: int = 480, height: int = 270, seed: int = 4302) -> np.ndarr
     draw.text((width * 0.42, height * 0.36), "BLUR", font=font, fill=(240, 240, 240))
 
     rgb = np.asarray(image, dtype=np.float32) / 255
+    return np.concatenate([rgb, np.ones_like(rgb[..., :1])], axis=2)
+
+
+def photo(name: str = "sands.jpg") -> np.ndarray:
+    """A photo from assets/ as float32 RGBA, the format the blurs take.
+
+    sands.jpg is the 1920x1080 skyline crop, so timings measured on it match
+    the 1080p numbers in the script.
+    """
+    rgb = np.asarray(Image.open(ASSETS / name).convert("RGB"), dtype=np.float32) / 255
     return np.concatenate([rgb, np.ones_like(rgb[..., :1])], axis=2)

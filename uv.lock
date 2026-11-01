@@ -186,6 +186,7 @@ name = "kawase-presentation"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "av" },
     { name = "manim" },
     { name = "moderngl" },
     { name = "numpy" },
@@ -199,6 +200,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", specifier = ">=19" },
     { name = "manim", specifier = ">=0.22" },
     { name = "moderngl", specifier = ">=5.13" },
     { name = "numpy", specifier = ">=2.3" },
