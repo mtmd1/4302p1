@@ -18,8 +18,32 @@ transformation is the explanation, so they need to watch it happen. The
 durations and EASE below are the tested compromise, slightly quicker than
 manim's defaults. Hold states with self.wait(), but never buy hold time by
 shortening a change below these.
+
+Synchrony: everything that describes one state changes in one self.play. A label
+or number changes with its picture, never after it, so the screen never
+contradicts itself. Only a narration cue may separate two states. If a change
+must run in stages, each label changes at the stage it describes.
+
+Order: a process that visits cells or pixels is shown in the order it runs, left
+to right, then top to bottom (in 3D, left to right, then far to near). Never skip
+ahead, jump diagonally or show random samples: that downsamples the very animation
+that explains it. To fit the time, speed the steps up. This is the one exception
+to the minimums above: a step of a sweep may be as fast as it needs to be.
+
+Fields: a label, axis or readout appears when the narration introduces it, not
+before. An empty "levels: -" waiting on screen makes the viewer wait for it too.
+
+Maths: a calculation that backs up a number is there for anyone who pauses, not
+to be absorbed in playback, so it's quiet: TEXT_SM or smaller, MUTED, and out of the
+way of the content. Maths that is itself the point, such as the gaussian function,
+keeps full size.
+
+Timing: scenes never hardcode when narration happens. self.cue("phrase") holds
+until the talk reaches that moment, so clips retime without scene edits.
 """
 
+import json
+import re
 from pathlib import Path
 
 import manimpango
@@ -35,7 +59,7 @@ BACKGROUND = ManimColor("#0B0E14")
 # technical: numbers, pixel values, timings, tap counts, code. Equations stay in
 # MathTex.
 FONT = "Figtree"
-MONO = "Fragment Mono"  # One weight; its plain zero keeps grids of 0.xx calm
+MONO = "Fragment Mono"  # One weight, with a slashed zero
 
 # Fragment Mono ships with the project (SIL OFL), so no system install is needed
 _FONTS = Path(__file__).resolve().parents[2] / "assets" / "fonts"
@@ -57,6 +81,28 @@ class Mono(Text):
 # Counters and readouts in mono rather than LaTeX's Computer Modern. Integer
 # inherits this.
 DecimalNumber.set_default(mob_class=Mono)
+
+
+_place_digits = DecimalNumber._set_submobjects_from_number
+
+
+def _place_digits_monospaced(self, number):
+    """Space a counter's digits on a true mono grid.
+
+    Manim spaces them by each glyph's visible width, which squeezes Mono digits
+    together and makes them jitter as they roll.
+    """
+    _place_digits(self, number)
+    if getattr(self, "mob_class", None) is Mono and self.unit is None:
+        zero = Mono("0", font_size=48)
+        advance = (Mono("00", font_size=48).width - zero.width) / zero.height
+        step = advance * max(glyph.height for glyph in self.submobjects)
+        for i, glyph in enumerate(self.submobjects):
+            glyph.set_x(i * step)
+        self.move_to(ORIGIN)
+
+
+DecimalNumber._set_submobjects_from_number = _place_digits_monospaced
 Code.set_default(paragraph_config={"font": MONO})
 
 # One colour per method, used for its bars, kernels and labels throughout.
@@ -69,7 +115,8 @@ DUAL_KAWASE = ManimColor("#D9B3FF")
 
 TEXT = ManimColor("#E6E8EE")
 MUTED = ManimColor("#7D8594")  # Grid lines, axes, secondary labels
-HIGHLIGHT = ManimColor("#FFD166")  # The pixel or tap currently in focus
+HIGHLIGHT = ManimColor("#FFD166")  # Outlines, arrows and the cell or step currently in focus
+POINT = ManimColor("#FF2A2A")  # Points: taps, sample positions. Purer than KAWASE
 
 # Colour channels of an image. Only for literal R, G and B values, never for
 # methods, so they're purer than the method colours they sit near.
@@ -175,17 +222,80 @@ def count(start: float, end: float) -> float:
     return max(QUICK, abs(np.log10(max(end, 1e-9) / max(start, 1e-9))) / COUNT_SPEED)
 
 
+# MARK: Cues
+
+_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = _ROOT / "script" / "script.tex"
+CUES = Path(__file__).resolve().parent / "cues.json"  # Phrase -> seconds in the cut audio
+NARRATION_WPM = 172  # The full read took 7:46, so drafts are roughly in sync without cues.json
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+(?:['-][a-z0-9]+)*", text.lower())
+
+
+def spoken_words() -> list[str]:
+    """The words of the script as read aloud: no comments, maths, citations or appendix."""
+    text = SCRIPT.read_text().split(r"\begin{document}")[1].split(r"\begin{appendices}")[0]
+    text = re.sub(r"(?<!\\)%.*", "", text)
+    text = re.sub(r"\\\[.*?\\\]", " ", text, flags=re.S)
+    text = re.sub(r"\$[^$]*\$", " ", text)
+    text = re.sub(r"\\(section|cite)\*?\{[^}]*\}", " ", text)
+    return _words(re.sub(r"\\[a-zA-Z]+", " ", text))
+
+
+def find_phrase(phrase: str, words: list[str]) -> list[int]:
+    """Every word index at which phrase occurs."""
+    target = _words(phrase)
+    return [i for i in range(len(words) - len(target) + 1) if words[i : i + len(target)] == target]
+
+
+def cue_time(phrase: str) -> float:
+    """Seconds into the talk at which phrase is spoken.
+
+    A phrase is a label for a moment, not a promise of the exact words recorded:
+    cues.json maps each label to its time in the cut audio, and until that exists
+    the time is estimated from the phrase's position in the script.
+    """
+    if CUES.exists() and phrase in (table := json.loads(CUES.read_text())):
+        return float(table[phrase])
+    found = find_phrase(phrase, spoken_words())
+    if not found:
+        raise ValueError(f"Cue {phrase!r} is not in {SCRIPT.name} or {CUES.name}")
+    return found[0] / NARRATION_WPM * 60
+
+
 # MARK: Scenes
 
 PAUSE = 1.0  # Seconds held at the start and end of every clip
 
 
 class Clip:
-    """Mixin adding the standard pauses. List it before the scene type."""
+    """Mixin adding the standard pauses and cues. List it before the scene type."""
 
     def setup(self):
         super().setup()
+        self._cue_origin = None
         self.wait(PAUSE)
+
+    def cue(self, phrase: str):
+        """Hold the current state until the narration reaches phrase.
+
+        Call it just before the change that phrase triggers. The first cue only
+        fixes where this clip sits in the talk. End a scene by cueing the phrase
+        that starts the next graphic, which holds the final state until then.
+        A change that overruns its cue is never shortened: it warns and carries on.
+        """
+        target = cue_time(phrase)
+        now = self.renderer.time
+        if self._cue_origin is None:
+            self._cue_origin = target - now
+            return
+        hold = target - self._cue_origin - now
+        if hold >= 1 / config.frame_rate:
+            self.wait(hold)
+        elif hold < -QUICK:
+            logger.warning(f"{type(self).__name__}: running {-hold:.2f} s late at cue {phrase!r}")
 
     def tear_down(self):
         self.wait(PAUSE)

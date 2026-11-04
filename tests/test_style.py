@@ -6,6 +6,9 @@ which pass because the check only looks inside styled arguments.
 """
 
 import ast
+import json
+import re
+import sys
 from pathlib import Path
 
 import manim
@@ -40,6 +43,17 @@ def magic_numbers(node: ast.AST) -> list[ast.Constant]:
     ]
 
 
+def is_technical(node: ast.AST) -> bool:
+    """An interpolated value, or a string of nothing but numbers and units."""
+    if isinstance(node, ast.JoinedStr):
+        return any(isinstance(part, ast.FormattedValue) for part in node.values)
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and bool(re.fullmatch(r"[\d\s.,x×*/=+%-]*\d[\d\s.,x×*/=+%-]*( ?(ms|µs|FPS|fps|taps))?", node.value))
+    )
+
+
 def violations(source: str, allowed_colours: set[str]) -> list[str]:
     lines = source.splitlines()
     found = []
@@ -51,6 +65,10 @@ def violations(source: str, allowed_colours: set[str]) -> list[str]:
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
+        if getattr(node.func, "id", None) in ("Text", "MarkupText") and node.args:
+            first = node.args[0]
+            if is_technical(first):
+                report(first, "numbers and technical values belong in Mono, not Text")
         for keyword in node.keywords:
             if keyword.arg in SCALED:
                 for number in magic_numbers(keyword.value):
@@ -74,6 +92,32 @@ def test_scenes_use_style(path: Path):
     assert not found, f"{path.name} hardcodes style values:\n  " + "\n  ".join(found)
 
 
+def cue_phrases(path: Path) -> list[tuple[int, str]]:
+    return [
+        (node.lineno, node.args[0].value)
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "attr", None) == "cue"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    ]
+
+
+@pytest.mark.parametrize("path", render._scene_files(), ids=lambda p: p.name)
+def test_cues_name_one_moment_in_the_script(path: Path):
+    """A cue must be findable, and mean only one moment, or it can't be aligned."""
+    sys.path.insert(0, str(render.EXAMPLES))
+    import style
+
+    words = style.spoken_words()
+    timed = json.loads(style.CUES.read_text()) if style.CUES.exists() else {}
+    for line, phrase in cue_phrases(path):
+        if phrase in timed:
+            continue  # Timed from the cut, whose wording can differ from the script
+        found = style.find_phrase(phrase, words)
+        assert len(found) == 1, f"{path.name} line {line}: {phrase!r} occurs {len(found)} times in the script"
+
+
 # MARK: The checker itself
 
 
@@ -89,6 +133,9 @@ def test_scenes_use_style(path: Path):
         "self.wait(0.5)",
         "Text('a', color=YELLOW)",
         "Square(fill_color='#ff0000')",
+        "Text(f'{ms:.2f} ms')",
+        "Text('1681')",
+        "Text('4.5 ms')",
     ],
 )
 def test_checker_flags(line):
@@ -106,6 +153,8 @@ def test_checker_flags(line):
         "Square(fill_color=magma(t))",
         "ImageMobject(p).scale(2)",
         "Text('a', font_size=99)  # style: ignore",
+        "Text('Dual Kawase')",
+        "Mono(f'{ms:.2f} ms')",
     ],
 )
 def test_checker_allows(line):

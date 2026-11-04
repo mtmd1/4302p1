@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.9">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p60" frameDuration="1/60s" width="1920" height="1080"/>
+    <asset id="a1" name="intro_montage_IntroMontage.mov" start="0s" duration="890/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/intro_montage_IntroMontage.mov"/>
+    <asset id="a2" name="box_pixels_PixelsToNumbers.mov" start="0s" duration="810/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/box_pixels_PixelsToNumbers.mov"/>
+    <asset id="a3" name="box_average_Average.mov" start="0s" duration="934/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/box_average_Average.mov"/>
+    <asset id="a4" name="box_41_FortyOne.mov" start="0s" duration="678/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/box_41_FortyOne.mov"/>
+    <asset id="a5" name="box_budget_Budget.mov" start="0s" duration="886/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/box_budget_Budget.mov"/>
+    <asset id="a6" name="box_taps_Taps.mov" start="0s" duration="1171/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/box_taps_Taps.mov"/>
+    <asset id="a7" name="box_counter_Counter.mov" start="0s" duration="579/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/box_counter_Counter.mov"/>
+    <asset id="a8" name="box_artifact_Artifact.mov" start="0s" duration="800/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/box_artifact_Artifact.mov"/>
+    <asset id="a9" name="gauss_weights_GaussWeights.mov" start="0s" duration="1164/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/gauss_weights_GaussWeights.mov"/>
+    <asset id="a10" name="gauss_bell_GaussBell.mov" start="0s" duration="405/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/gauss_bell_GaussBell.mov"/>
+    <asset id="a11" name="gauss_sigma_GaussSigma.mov" start="0s" duration="1296/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/gauss_sigma_GaussSigma.mov"/>
+    <asset id="a12" name="gauss_compare_GaussCompare.mov" start="0s" duration="827/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/gauss_compare_GaussCompare.mov"/>
+    <asset id="a13" name="gauss_readout_GaussReadout.mov" start="0s" duration="515/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/gauss_readout_GaussReadout.mov"/>
+    <asset id="a14" name="sep_split_SepSplit.mov" start="0s" duration="1211/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/sep_split_SepSplit.mov"/>
+    <asset id="a15" name="sep_taps_SepTaps.mov" start="0s" duration="661/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/sep_taps_SepTaps.mov"/>
+    <asset id="a16" name="sep_radius_SepRadius.mov" start="0s" duration="808/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/sep_radius_SepRadius.mov"/>
+    <asset id="a17" name="kawase_title_Title.mov" start="0s" duration="865/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_title_Title.mov"/>
+    <asset id="a18" name="kawase_twice_Twice.mov" start="0s" duration="824/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_twice_Twice.mov"/>
+    <asset id="a19" name="kawase_convolve_Convolve.mov" start="0s" duration="1223/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_convolve_Convolve.mov"/>
+    <asset id="a20" name="kawase_chain_Chain.mov" start="0s" duration="1442/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_chain_Chain.mov"/>
+    <asset id="a21" name="kawase_bilinear_Bilinear.mov" start="0s" duration="1983/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_bilinear_Bilinear.mov"/>
+    <asset id="a22" name="kawase_four_Four.mov" start="0s" duration="935/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_four_Four.mov"/>
+    <asset id="a23" name="kawase_repeat_Repeat.mov" start="0s" duration="518/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_repeat_Repeat.mov"/>
+    <asset id="a24" name="kawase_offsets_Offsets.mov" start="0s" duration="1434/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_offsets_Offsets.mov"/>
+    <asset id="a25" name="kawase_taps_Taps.mov" start="0s" duration="778/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/kawase_taps_Taps.mov"/>
+    <asset id="a26" name="bjorge_lowpass_BjorgeLowpass.mov" start="0s" duration="948/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/bjorge_lowpass_BjorgeLowpass.mov"/>
+    <asset id="a27" name="bjorge_shimmer_BjorgeShimmer.mov" start="0s" duration="732/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/bjorge_shimmer_BjorgeShimmer.mov"/>
+    <asset id="a28" name="bjorge_diagonal_BjorgeDiagonal.mov" start="0s" duration="490/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/bjorge_diagonal_BjorgeDiagonal.mov"/>
+    <asset id="a29" name="bjorge_up_BjorgeUp.mov" start="0s" duration="935/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/bjorge_up_BjorgeUp.mov"/>
+    <asset id="a30" name="bjorge_dual_BjorgeDual.mov" start="0s" duration="1261/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/bjorge_dual_BjorgeDual.mov"/>
+    <asset id="a31" name="bjorge_cost_BjorgeCost.mov" start="0s" duration="1515/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/bjorge_cost_BjorgeCost.mov"/>
+    <asset id="a32" name="outro_counter_OutroCounter.mov" start="0s" duration="1484/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/outro_counter_OutroCounter.mov"/>
+    <asset id="a33" name="outro_uses_OutroUses.mov" start="0s" duration="615/60s" hasVideo="1" format="r1" src="file:///home/mutant/4302p1/media/resolve/outro_uses_OutroUses.mov"/>
+  </resources>
+  <library>
+    <event name="blur clips">
+      <project name="blur clips">
+        <sequence format="r1" duration="28660/60s" tcStart="216000/60s" tcFormat="NDF">
+          <spine>
+          <gap name="Gap" offset="216000/60s" start="216000/60s" duration="372/60s"/>
+          <asset-clip name="intro_montage_IntroMontage.mov" ref="a1" offset="216372/60s" start="60/60s" duration="770/60s" format="r1" tcFormat="NDF"/>
+          <gap name="Gap" offset="217142/60s" start="216000/60s" duration="624/60s"/>
+          <asset-clip name="box_pixels_PixelsToNumbers.mov" ref="a2" offset="217766/60s" start="60/60s" duration="691/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="box_average_Average.mov" ref="a3" offset="218457/60s" start="60/60s" duration="814/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="box_41_FortyOne.mov" ref="a4" offset="219271/60s" start="60/60s" duration="558/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="box_budget_Budget.mov" ref="a5" offset="219829/60s" start="60/60s" duration="767/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="box_taps_Taps.mov" ref="a6" offset="220596/60s" start="60/60s" duration="1051/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="box_counter_Counter.mov" ref="a7" offset="221647/60s" start="60/60s" duration="460/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="box_artifact_Artifact.mov" ref="a8" offset="222107/60s" start="60/60s" duration="555/60s" format="r1" tcFormat="NDF"/>
+          <gap name="Gap" offset="222662/60s" start="216000/60s" duration="126/60s"/>
+          <asset-clip name="gauss_weights_GaussWeights.mov" ref="a9" offset="222788/60s" start="60/60s" duration="1045/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="gauss_bell_GaussBell.mov" ref="a10" offset="223833/60s" start="60/60s" duration="285/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="gauss_sigma_GaussSigma.mov" ref="a11" offset="224118/60s" start="60/60s" duration="1176/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="gauss_compare_GaussCompare.mov" ref="a12" offset="225294/60s" start="60/60s" duration="708/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="gauss_readout_GaussReadout.mov" ref="a13" offset="226002/60s" start="60/60s" duration="283/60s" format="r1" tcFormat="NDF"/>
+          <gap name="Gap" offset="226285/60s" start="216000/60s" duration="112/60s"/>
+          <asset-clip name="sep_split_SepSplit.mov" ref="a14" offset="226397/60s" start="60/60s" duration="1091/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="sep_taps_SepTaps.mov" ref="a15" offset="227488/60s" start="60/60s" duration="542/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="sep_radius_SepRadius.mov" ref="a16" offset="228030/60s" start="60/60s" duration="575/60s" format="r1" tcFormat="NDF"/>
+          <gap name="Gap" offset="228605/60s" start="216000/60s" duration="113/60s"/>
+          <asset-clip name="kawase_title_Title.mov" ref="a17" offset="228718/60s" start="60/60s" duration="746/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="kawase_twice_Twice.mov" ref="a18" offset="229464/60s" start="60/60s" duration="704/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="kawase_convolve_Convolve.mov" ref="a19" offset="230168/60s" start="60/60s" duration="1018/60s" format="r1" tcFormat="NDF"/>
+          <gap name="Gap" offset="231186/60s" start="216000/60s" duration="86/60s"/>
+          <asset-clip name="kawase_chain_Chain.mov" ref="a20" offset="231272/60s" start="60/60s" duration="1322/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="kawase_bilinear_Bilinear.mov" ref="a21" offset="232594/60s" start="60/60s" duration="1862/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="kawase_four_Four.mov" ref="a22" offset="234456/60s" start="60/60s" duration="816/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="kawase_repeat_Repeat.mov" ref="a23" offset="235272/60s" start="60/60s" duration="399/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="kawase_offsets_Offsets.mov" ref="a24" offset="235671/60s" start="60/60s" duration="1314/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="kawase_taps_Taps.mov" ref="a25" offset="236985/60s" start="60/60s" duration="488/60s" format="r1" tcFormat="NDF"/>
+          <gap name="Gap" offset="237473/60s" start="216000/60s" duration="170/60s"/>
+          <asset-clip name="bjorge_lowpass_BjorgeLowpass.mov" ref="a26" offset="237643/60s" start="60/60s" duration="829/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="bjorge_shimmer_BjorgeShimmer.mov" ref="a27" offset="238472/60s" start="60/60s" duration="612/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="bjorge_diagonal_BjorgeDiagonal.mov" ref="a28" offset="239084/60s" start="60/60s" duration="367/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="bjorge_up_BjorgeUp.mov" ref="a29" offset="239451/60s" start="60/60s" duration="815/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="bjorge_dual_BjorgeDual.mov" ref="a30" offset="240266/60s" start="60/60s" duration="1140/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="bjorge_cost_BjorgeCost.mov" ref="a31" offset="241406/60s" start="60/60s" duration="1237/60s" format="r1" tcFormat="NDF"/>
+          <gap name="Gap" offset="242643/60s" start="216000/60s" duration="158/60s"/>
+          <asset-clip name="outro_counter_OutroCounter.mov" ref="a32" offset="242801/60s" start="60/60s" duration="1364/60s" format="r1" tcFormat="NDF"/>
+          <asset-clip name="outro_uses_OutroUses.mov" ref="a33" offset="244165/60s" start="60/60s" duration="495/60s" format="r1" tcFormat="NDF"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

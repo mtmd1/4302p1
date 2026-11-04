@@ -1,0 +1,85 @@
+The humble blur is one of the most expensive techniques in computer graphics, yet we see it everywhere.
+In the frosted glass behind elements of your screen, in the bloom around bright lights of video games, the background of depth of field shots.
+All rendered in a time budget of milliseconds that's shared with everything else on that screen.
+Today I will explain why blurring an image is so costly and how modern GPUs do it in a fraction of a millisecond.
+
+First, let's treat our image as three two-dimensional matrices of floats between zero and one.
+One for each channel, although each channel blurs independently, but we can consider just one.
+To blur it, we loop through each pixel and set it to the average of the pixels in a square around it, ignoring positions that are off the edge and writing to a second buffer so that we don't read previously written values.
+Let's try a forty-one by forty-one box blur on this image.
+Wow, that took a long time.
+I did exaggerate it, but the four point five milliseconds that this took to run is actually more than a quarter of the total frame budget for a game running at that smooth sixty frames per second.
+Our kernel isn't very big, but every pixel still reads seventeen hundred values from memory, sums them together, divides, and writes it back.
+On a GPU, the arithmetic and the single write are almost free, so it's the number of memory reads that's slowing us down.
+GPU programmers call these taps.
+At ten eighty p, we're doing almost three and a half billion taps, and at four K, that would be fourteen billion.
+Worse, you'll notice these boxy artifacts on the blur, which don't mimic what we'd expect from a camera.
+Modern graphics uses a better blur, the Gaussian.
+
+Consider our box blur kernel.
+Instead of giving each pixel a weight of one, and then dividing by the count, let's pass the x and y positions of each pixel in the kernel to a weight function, and then divide by the sum of the weights.
+That way, our function can be whatever we like.
+For a Gaussian blur, we use the Gaussian function, otherwise called a normal distribution.
+This gives us a second parameter, the standard deviation sigma.
+Increasing it makes the image blurrier until boxes reappear because our kernel is now truncating the effective domain of the weight function we are applying.
+To fix this let's always make the width of our kernel at least six times the standard deviation.
+At roughly the same size as our forty-one by forty-one box blur the Gaussian is less intense but much smoother.
+The Gaussian blur is the standard blur in computer graphics, but it's just as slow as our box blur.
+So how do we go about optimizing these?
+
+It turns out that our kernels are linearly separable.
+What that means is that our 2D kernel is equal to a column of weights multiplied by a row of weights.
+Instead of doing one pass over a 2D kernel, we can just blur each row and then blur each column of the result.
+The output is exactly identical for both of our blurs, but the number of taps drops to eighty-two, and that four point five milliseconds becomes zero point two.
+That is a ninety-five percent decrease in the number of taps, but the cost still increases as the radius does.
+We can actually do better.
+
+In his two thousand and three GDC talk on post-processing in Xbox game DOUBLE-S.T.E.A.L, Masaki Kawase presented the Kawase blur based on what happens when you chain blurs together.
+What do you think will happen to this Gaussian blur when I blur the image a second time?
+As you'd expect, it gets blurrier.
+What about a box blur?
+It also gets blurrier, but the artifacts are gone too.
+Why?
+Convolution is associative.
+Two passes of a kernel on an image is actually the same as one pass on the image with a kernel convolved with itself.
+Let's watch that happen to our box blur kernel.
+Already, it's no longer a box blur, and if we keep convolving it, as it turns out, chaining Gaussian blurs makes a stronger Gaussian blur, but chaining box blurs also creates a Gaussian blur.
+So the question is no longer, how do we compute the kernel faster, but what's the cheapest blur we can repeat?
+Kawase found the answer inside the GPU.
+
+When a GPU looks up a texture, it uses non-integer coordinates from zero to one, which don't always land on a pixel, so a sampler object decides which value to return.
+The most common method to decide that is called bilinear filtering, a weighted average of the four nearest pixel centres based on how far the point is from each.
+So when we sample at the exact intersection of four pixels, we get a two by two box blur in a single tap, which GPUs are built to do very fast.
+Kawase takes four of these samples, at the four corners of a pixel, and averages them.
+That gives the centre pixel a weight of four, the sides two, and the corners one, which already looks a bit like our Gaussian approximation from before.
+But if you repeat this as it is, once neighbours are almost identical, each pass stops having an effect.
+So Kawase goes further with each pass, pushing the samples along the diagonals.
+The gaps between them land on pixels that are already blurred, so as long as the offsets are gentle, those gaps are never visible.
+A common choice is five passes that the offsets displayed.
+Swapping between two buffers, this needs no more memory than our separated blur.
+Five passes of four taps is twenty taps per pixel, for a result equivalent to a Gaussian with a standard deviation of five point three.
+
+Look closely at a blurred image.
+Neighbouring pixels are almost the same colour.
+A blur is a low pass filter.
+It's lossy, it destroys high spatial frequency content, and an image with less detail does not need a high resolution.
+So what if we shrunk the image, and then scaled it back up using our bilinear filtering?
+Well, these boxy artefacts are back.
+Worse, when the image moves, they shimmer.
+As we shrink, let's reach into the neighbours.
+Keep the centre tap and add four of Kawase's diagonals.
+On the way up, one bilinear tap stretches each pixel into a square pyramid, which is where the blockiness comes from.
+Instead, we'll put eight taps in a ring, so no direction is favoured, and the way up looks more round.
+That's exactly what Marius Bjørge, a graphics engineer at Arm, presented at SIGGRAPH twenty fifteen to make bloom effects performant on mobile phones.
+Five taps going down, eight in a ring coming up.
+He called it the dual filter for its two kernels.
+Nowadays, we call it the Dual Kawase blur.
+Each downscale quarters the number of pixels in the blur, so the whole thing costs about twelve taps per pixel.
+And each extra level doubles the strength of the blur at almost no cost.
+Four levels give a sigma of about nine, five about eighteen, both in almost fifty microseconds.
+
+Our first naive box blur took over a quarter of the frame budget.
+Separation took it from seventeen hundred taps to eighty-two, Kawase then reduced it to twenty, and the Dual Kawase does it in twelve, plus it can get wider at almost no extra cost.
+If my GPU did nothing but this blur, it could draw more than twenty thousand frames per second.
+That is why this technique powers KDE desktops, translucent window panels, Android's window blurs and many video games.
+By understanding the hardware, graphics programmers found the right maths.

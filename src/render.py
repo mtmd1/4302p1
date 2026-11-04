@@ -12,14 +12,15 @@ DaVinci Resolve on Linux can decode it (it can't read H.264), and the alpha mean
 any clip can sit over or under the greenscreen footage. Scenes always render on a
 transparent background; one that needs a backdrop draws it.
 
-Manim's cache can't see changes inside blur.py, so it is always disabled. All
-video IO goes through PyAV, which manim already depends on, so no system ffmpeg
-is needed.
+Manim's cache can't see changes inside blur.py, so it is always disabled. Scene
+video goes through PyAV, which manim already depends on. Recordings go through
+the system ffmpeg, which is much faster on 4K footage.
 """
 
 import argparse
 import ast
 import importlib.util
+import subprocess
 import sys
 import traceback
 from fractions import Fraction
@@ -46,10 +47,13 @@ FOOTAGE_LONG_EDGE = 1920
 QUALITIES = {
     "l": "low_quality",
     "m": "medium_quality",
+    "d": "medium_quality",  # Draft: 720p at the timeline's frame rate, see DRAFT_FPS
     "h": "high_quality",
     "p": "production_quality",
     "k": "fourk_quality",
 }
+
+DRAFT_FPS = 60  # So draft clips land on every frame of the timeline, as final ones do
 
 PIX_FMT = "yuva444p10le"
 
@@ -116,58 +120,25 @@ class ClipWriter:
         self.close()
 
 
-def _upright(frame: av.VideoFrame, size: tuple[int, int]) -> av.VideoFrame | np.ndarray:
-    """Scale to size, as stored, then apply a phone's rotation flag, which ProRes can't carry."""
-    if (frame.width, frame.height) != size:
-        frame = frame.reformat(width=size[0], height=size[1], interpolation="AREA")
-    if not frame.rotation:
-        return frame
-    return np.rot90(frame.to_ndarray(format="rgba"), k=frame.rotation // 90)
-
-
-def transcode(src: Path, dst: Path, fps=None, long_edge=None):
-    """Re-encode any video PyAV can read as a ProRes 4444 clip, keeping its audio.
-
-    With fps, frames are placed by their timestamps on that constant rate,
-    repeated or dropped as needed, so variable frame rate footage stays in sync
-    with its audio. Without it, every frame is kept as is. With long_edge,
-    larger video is shrunk to fit it; smaller video is never enlarged.
-    """
+def transcode(src: Path, dst: Path):
+    """Re-encode a manim render as a ProRes 4444 clip, keeping every frame and its audio."""
     with av.open(str(src)) as source:
         video = source.streams.video[0]
         audio = source.streams.audio[0] if source.streams.audio else None
-        width, height = video.width, video.height
-        if long_edge and max(width, height) > long_edge:
-            scale = long_edge / max(width, height)
-            width, height = (round(width * scale / 2) * 2, round(height * scale / 2) * 2)
-        size = (width, height)
-        rotation = next(source.decode(video=0)).rotation
-        source.seek(0)
-        if rotation % 180:
-            width, height = height, width
         writer = ClipWriter(
             dst,
-            fps or video.average_rate,
-            (width, height),
+            video.average_rate,
+            (video.width, video.height),
             audio_rate=audio.rate if audio else None,
             audio_layout=audio.layout.name if audio else "stereo",
         )
-        held = None  # The latest frame, shown until the next one's timestamp
         with writer:
             for packet in source.demux([s for s in (video, audio) if s is not None]):
                 for frame in packet.decode():
-                    if packet.stream is not video:
-                        writer.write_audio(frame)
-                    elif not fps:
-                        writer.write(_upright(frame, size))
+                    if packet.stream is video:
+                        writer.write(frame)
                     else:
-                        if held is not None:
-                            while writer.frames < frame.time * fps:
-                                writer.write(held)
-                        held = _upright(frame, size)
-            if fps and held is not None:
-                while writer.frames < float(source.duration / av.time_base) * fps:
-                    writer.write(held)
+                        writer.write_audio(frame)
 
 
 # MARK: Manim
@@ -209,6 +180,7 @@ def render_scene(path: Path, scene: str, quality: str) -> Path:
         "input_file": path,
         "media_dir": MEDIA,
         "quality": QUALITIES[quality],
+        **({"frame_rate": DRAFT_FPS} if quality == "d" else {}),
         "transparent": True,
         "disable_caching": True,
         "progress_bar": "none",
@@ -230,10 +202,26 @@ def render_scene(path: Path, scene: str, quality: str) -> Path:
 
 
 def render_footage(path: Path, scene: str, quality: str) -> Path:
-    """Transcode a recording into CLIPS, upright, at FOOTAGE_FPS and FOOTAGE_LONG_EDGE."""
+    """Transcode a recording into CLIPS, upright, at FOOTAGE_FPS and FOOTAGE_LONG_EDGE.
+
+    Runs in ffmpeg rather than PyAV: decoding, scaling and encoding 4K here all
+    use every core, which is about 10x faster than ClipWriter's Python loop. ffmpeg
+    applies the phone's rotation flag and places frames by their timestamps.
+    """
     CLIPS.mkdir(parents=True, exist_ok=True)
     clip = CLIPS / f"{path.stem}.mov"
-    transcode(path, clip, fps=FOOTAGE_FPS, long_edge=FOOTAGE_LONG_EDGE)
+    edge = FOOTAGE_LONG_EDGE
+    scale = (
+        f"scale=w='min({edge},iw)':h='min({edge},ih)':force_original_aspect_ratio=decrease"
+        ":force_divisible_by=2:flags=area"
+    )
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-stats", "-y", "-i", str(path)]
+    command += ["-map", "0:v:0", "-map", "0:a:0?", "-vf", f"{scale},format={PIX_FMT}"]
+    command += ["-fps_mode", "cfr", "-r", str(FOOTAGE_FPS)]
+    command += ["-c:v", "prores_ks", "-profile:v", "4444", "-alpha_bits", "16", "-vendor", "apl0"]
+    command += ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]
+    command += ["-c:a", "pcm_s16le", str(clip)]
+    subprocess.run(command, check=True)
     return clip
 
 
@@ -292,7 +280,7 @@ def resolve_targets(targets: list[str]) -> list[tuple[Path, str]]:
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("targets", nargs="*", help="example name or path, optionally with :Scene")
-    parser.add_argument("-q", "--quality", choices=QUALITIES, default="h", help="l=480p15, m=720p30, h=1080p60 (default), p=1440p60, k=2160p60")
+    parser.add_argument("-q", "--quality", choices=QUALITIES, default="h", help="l=480p15, m=720p30, d=720p60, h=1080p60 (default), p=1440p60, k=2160p60")
     parser.add_argument("--list", action="store_true", help="list renderable scenes and exit")
     args = parser.parse_args()
 

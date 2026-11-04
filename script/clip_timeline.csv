@@ -1,0 +1,34 @@
+order,clip_file,place_at,place_at_seconds,source_in,source_out,length_seconds,starts_on
+1,intro_montage_IntroMontage.mov,01:00:06:12,6.200,00:00:01:00,00:00:13:50,12.83,the frosted glass
+2,box_pixels_PixelsToNumbers.mov,01:00:29:26,29.433,00:00:01:00,00:00:12:31,11.52,"First, let's treat"
+3,box_average_Average.mov,01:00:40:57,40.950,00:00:01:00,00:00:14:34,13.57,To blur it
+4,box_41_FortyOne.mov,01:00:54:31,54.517,00:00:01:00,00:00:10:18,9.30,Let's try a 41 by 41
+5,box_budget_Budget.mov,01:01:03:49,63.817,00:00:01:00,00:00:13:47,12.78,the roughly 4.5 milliseconds
+6,box_taps_Taps.mov,01:01:16:36,76.600,00:00:01:00,00:00:18:31,17.52,every pixel still reads
+7,box_counter_Counter.mov,01:01:34:07,94.117,00:00:01:00,00:00:08:40,7.67,That's almost three and a half
+8,box_artifact_Artifact.mov,01:01:41:47,101.783,00:00:01:00,00:00:10:15,9.25,You'll also notice
+9,gauss_weights_GaussWeights.mov,01:01:53:08,113.133,00:00:01:00,00:00:18:25,17.42,Consider our box blur kernel
+10,gauss_bell_GaussBell.mov,01:02:10:33,130.550,00:00:01:00,00:00:05:45,4.75,For a gaussian blur
+11,gauss_sigma_GaussSigma.mov,01:02:15:18,135.300,00:00:01:00,00:00:20:36,19.60,This gives us a second parameter
+12,gauss_compare_GaussCompare.mov,01:02:34:54,154.900,00:00:01:00,00:00:12:48,11.80,At roughly the same kernel size
+13,gauss_readout_GaussReadout.mov,01:02:46:42,166.700,00:00:01:00,00:00:05:43,4.72,But it's just as slow
+14,sep_split_SepSplit.mov,01:02:53:17,173.283,00:00:01:00,00:00:19:11,18.18,it turns out that our kernels
+15,sep_taps_SepTaps.mov,01:03:11:28,191.467,00:00:01:00,00:00:10:02,9.03,The output is exactly identical
+16,sep_radius_SepRadius.mov,01:03:20:30,200.500,00:00:01:00,00:00:10:35,9.58,That's 95 percent
+17,kawase_title_Title.mov,01:03:31:58,211.967,00:00:01:00,00:00:13:26,12.43,In his 2003 GDC talk
+18,kawase_twice_Twice.mov,01:03:44:24,224.400,00:00:01:00,00:00:12:44,11.73,What do you think
+19,kawase_convolve_Convolve.mov,01:03:56:08,236.133,00:00:01:00,00:00:17:58,16.97,Convolution is associative
+20,kawase_chain_Chain.mov,01:04:14:32,254.533,00:00:01:00,00:00:23:02,22.03,as it turns out
+21,kawase_bilinear_Bilinear.mov,01:04:36:34,276.567,00:00:01:00,00:00:32:02,31.03,When a GPU looks up
+22,kawase_four_Four.mov,01:05:07:36,307.600,00:00:01:00,00:00:14:36,13.60,Kawase takes four
+23,kawase_repeat_Repeat.mov,01:05:21:12,321.200,00:00:01:00,00:00:07:39,6.65,But repeat this as it is
+24,kawase_offsets_Offsets.mov,01:05:27:51,327.850,00:00:01:00,00:00:22:54,21.90,So Kawase reaches further
+25,kawase_taps_Taps.mov,01:05:49:45,349.750,00:00:01:00,00:00:09:08,8.13,Five passes of four taps
+26,bjorge_lowpass_BjorgeLowpass.mov,01:06:00:43,360.717,00:00:01:00,00:00:14:49,13.82,Look closely at
+27,bjorge_shimmer_BjorgeShimmer.mov,01:06:14:32,374.533,00:00:01:00,00:00:11:12,10.20,So let's shrink the image
+28,bjorge_diagonal_BjorgeDiagonal.mov,01:06:24:44,384.733,00:00:01:00,00:00:07:07,6.12,So as we shrink
+29,bjorge_up_BjorgeUp.mov,01:06:30:51,390.850,00:00:01:00,00:00:14:35,13.58,And on the way up
+30,bjorge_dual_BjorgeDual.mov,01:06:44:26,404.433,00:00:01:00,00:00:20:00,19.00,That's exactly what Marius
+31,bjorge_cost_BjorgeCost.mov,01:07:03:26,423.433,00:00:01:00,00:00:21:37,20.62,Each downscale quarters
+32,outro_counter_OutroCounter.mov,01:07:26:41,446.683,00:00:01:00,00:00:23:44,22.73,Our first naive box blur
+33,outro_uses_OutroUses.mov,01:07:49:25,469.417,00:00:01:00,00:00:09:15,8.25,That is why this technique

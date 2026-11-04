@@ -48,7 +48,7 @@ class DualKawasePyramid(ClipScene):
             arrow = Arrow(bottom[i - 1].get_left(), bottom[i].get_right(), buff=SPACE_1, stroke_width=STROKE)
             self.play(GrowArrow(arrow), FadeIn(bottom[i], shift=LEFT * SPACE_2), run_time=BEAT)
 
-        stats = Text(
+        stats = Mono(
             f"{result.taps_per_pixel:.1f} taps per pixel  ·  {result.gpu_ms:.3f} ms on the GPU",
             font_size=TEXT_SM,
         ).to_edge(DOWN, buff=SPACE_3)

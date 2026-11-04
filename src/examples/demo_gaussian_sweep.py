@@ -36,9 +36,9 @@ class GaussianSweep(ClipScene):
         sigma_label.add_updater(lambda g: g[1].set_value(sigma.get_value()))
         sigma_label.arrange(RIGHT, buff=SPACE_1).next_to(image, DOWN).align_to(image, LEFT)
 
-        radius_label = Text(f"r = {RADIUS}", font_size=TEXT_BASE).next_to(image, DOWN)
+        radius_label = Mono(f"r = {RADIUS}", font_size=TEXT_BASE).next_to(image, DOWN)
         timing = always_redraw(
-            lambda: Text(f"{stats['ms']:.3f} ms", font_size=TEXT_SM).next_to(image, DOWN).align_to(image, RIGHT)
+            lambda: Mono(f"{stats['ms']:.3f} ms", font_size=TEXT_SM).next_to(image, DOWN).align_to(image, RIGHT)
         )
 
         self.add(image)
